@@ -3,7 +3,12 @@
 Pencatat keuangan pribadi yang memisahkan **di mana uang berada** dari **milik siapa uang itu**.
 Konsep lengkap ada di [konsep.md](konsep.md).
 
-## Menjalankan
+**Live:** https://belvahector-ship-it.github.io/dompetq/
+
+Tampilan mengikuti bahasa desain *soft neo-brutalist* yang sama dengan arsip-gratis.my.id:
+border tebal 2,4px, bayangan keras `6px 6px 0`, radius 16px, Archivo + Manrope, palet amber/hijau/merah/biru.
+
+## Menjalankan lokal
 
 Butuh server lokal (bukan dibuka langsung sebagai file, karena `localStorage` di `file://` tidak andal).
 
