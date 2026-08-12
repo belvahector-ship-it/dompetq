@@ -47,7 +47,7 @@ const LocalAdapter = {
       return true;
     } catch (e) {
       console.error('Gagal menulis penyimpanan lokal:', e);
-      return false;
+      return false;   // penyebab tersering: kuota penuh atau mode penyamaran
     }
   },
 
@@ -83,17 +83,41 @@ const Store = {
     return this.db;
   },
 
-  /* Tulis ditunda 250ms lalu digabung, supaya mengetik
-     di form tidak memicu satu tulis per ketukan.
+  /* Dipasang oleh app.js untuk memberi tahu pengguna kalau tulis gagal.
+     Gagal simpan TIDAK BOLEH didiamkan: pengguna akan terus mencatat
+     sementara tidak ada yang tersimpan. */
+  onGagalSimpan: null,
+
+  _lapor(ok) {
+    if (!ok && typeof this.onGagalSimpan === 'function') this.onGagalSimpan();
+    return ok;
+  },
+
+  /* Tulis ditunda 250ms lalu digabung, supaya mengetik di form
+     tidak memicu satu tulis per ketukan. Hanya untuk perubahan
+     yang tidak kritis (rename, pengaturan).
      Pola yang sama nanti dipakai untuk batch Sheets API. */
   simpan() {
     clearTimeout(this._pending);
-    this._pending = setTimeout(() => this.adapter.simpan(this.db), 250);
+    this._pending = setTimeout(
+      () => this.adapter.simpan(this.db).then(ok => this._lapor(ok)), 250);
   },
 
+  /* Untuk apa pun yang menyangkut uang — tulis seketika, tanpa jeda.
+     Jeda 250ms cukup untuk kehilangan satu transaksi kalau app ditutup
+     atau di-refresh tepat sesudah simpan. */
   async simpanSekarang() {
     clearTimeout(this._pending);
-    return this.adapter.simpan(this.db);
+    return this._lapor(await this.adapter.simpan(this.db));
+  },
+
+  /* Dipanggil saat halaman ditutup — pastikan tulisan tertunda ikut turun. */
+  flush() {
+    if (this._pending) {
+      clearTimeout(this._pending);
+      this._pending = null;
+      this.adapter.simpan(this.db);
+    }
   },
 
   async reset() {
@@ -136,8 +160,13 @@ const Store = {
       t => t.kantong_id === id || t.kantong_tujuan_id === id);
     if (dipakai) return { ok:false, alasan:'terpakai' };
     this.db.kantong = this.db.kantong.filter(k => k.id !== id);
-    if (this.db.kantong.length && !this.db.kantong.some(k => k.is_default))
-      this.db.kantong[0].is_default = true;
+    /* Default HARUS jatuh ke dana milik sendiri. Kalau default berpindah
+       ke kantong titipan, tiap pencatatan cepat akan salah kantong dan
+       angka "uang saya bersih" ikut ngawur. */
+    if (this.db.kantong.length && !this.db.kantong.some(k => k.is_default)) {
+      const milik = this.db.kantong.find(k => k.jenis === 'milik_sendiri');
+      (milik || this.db.kantong[0]).is_default = true;
+    }
     this.simpan(); return { ok:true };
   },
 
@@ -170,7 +199,7 @@ const Store = {
       reversal_dari:''
     }, t);
     this.db.transaksi.push(tx);
-    this.simpan();
+    this.simpanSekarang();
     return tx;
   },
 
@@ -204,7 +233,7 @@ const Store = {
     }
 
     this.db.transaksi.push(balik);
-    this.simpan();
+    this.simpanSekarang();
     return balik;
   },
 

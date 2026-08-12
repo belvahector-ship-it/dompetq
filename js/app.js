@@ -12,6 +12,7 @@
 function masukApp() {
   $('#scr-onboarding').hidden = true;
   $('#bottomnav').hidden = false;
+  pasangPengamanData();
   pasangNav();
   pasangSheetInput();
   pasangProfil();
@@ -45,6 +46,36 @@ function pasangNav() {
 
 function segarkan() {
   navTo(layarAktif);
+}
+
+/* Dua jaring pengaman penyimpanan. */
+let peringatanSimpanTampil = false;
+
+function pasangPengamanData() {
+  /* 1. Gagal tulis tidak boleh didiamkan. Kalau kuota penuh atau browser
+        dalam mode penyamaran, pengguna harus tahu SEKARANG — bukan setelah
+        sebulan mencatat ke ruang hampa. */
+  Store.onGagalSimpan = () => {
+    if (peringatanSimpanTampil) return;
+    peringatanSimpanTampil = true;
+    Modal.buka({
+      judul: 'Data gagal disimpan',
+      isi: el('p', { class:'muted', style:'margin:0' },
+        'Browser menolak menyimpan. Biasanya karena penyimpanan penuh, atau ' +
+        'kamu sedang membuka aplikasi ini di mode penyamaran (incognito). ' +
+        'Catatan yang baru kamu buat berisiko hilang saat halaman ditutup. ' +
+        'Unduh cadangan dari halaman Laporan sekarang, lalu buka di jendela biasa.'),
+      aksi: [{ label:'Mengerti', gaya:'btn-primary',
+               aksi: () => { peringatanSimpanTampil = false; } }]
+    });
+  };
+
+  /* 2. Tulis tertunda ikut turun saat halaman ditutup atau berpindah ke latar. */
+  const turunkan = () => Store.flush();
+  window.addEventListener('pagehide', turunkan);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') turunkan();
+  });
 }
 
 /* ══════════════════════════════════════════════
@@ -650,11 +681,15 @@ function renderTxRows() {
     TX.sub = 'akun';
   }
 
+  /* dihitung sekali, bukan sekali per akun — Calc.ringkas menelusuri
+     seluruh transaksi, memanggilnya di dalam map() jadi O(akun × transaksi) */
+  const saldoAkun = Calc.ringkas(db).saldoAkun;
+
   const pilihAkun = (field, judul) => () => Modal.pilih({
     judul,
     opsi: db.akun.filter(a => a.aktif).map(a => ({
       id:a.id, nama:a.nama, ikon:inisialAkun(a),
-      kanan: rp(Calc.ringkas(db).saldoAkun[a.id] || 0)
+      kanan: rp(saldoAkun[a.id] || 0)
     })),
     terpilih: TX[field],
     onPilih: o => { TX[field] = o.id; renderTxRows(); },
@@ -833,12 +868,16 @@ function renderTransaksi() {
   /* isi filter sumber dana */
   const sederhana = Store.modeSederhana();
   fk.hidden = sederhana;
-  if (!sederhana && fk.options.length !== db.kantong.length + 1) {
+  /* dibandingkan dari isi, bukan jumlah — kalau hanya jumlahnya yang dicek,
+     sumber dana yang di-rename tetap tampil dengan nama lama */
+  const sidik = db.kantong.map(k => k.id + ':' + k.nama).join('|');
+  if (!sederhana && fk.dataset.sidik !== sidik) {
     const lama = fk.value;
     kosong(fk);
     fk.appendChild(el('option', { value:'' }, 'Semua sumber'));
     db.kantong.forEach(k => fk.appendChild(el('option', { value:k.id }, k.nama)));
     fk.value = lama || '';
+    fk.dataset.sidik = sidik;
   }
 
   let daftar = db.transaksi.slice().sort((a, b) =>
@@ -887,14 +926,21 @@ function pasangLaporan() {
 
 function isiPeriode() {
   const sel = $('#lapPeriode');
-  if (sel.options.length) return;
   const kini = new Date();
+  /* dibangun ulang kalau bulan berjalan belum ada di daftar — app yang
+     dibiarkan terbuka melewati pergantian bulan tetap dapat bulan baru */
+  const kunci = kini.getFullYear() + '-' + pad2(kini.getMonth() + 1);
+  if (sel.options.length && sel.options[0].value === kunci) return;
+  const dipilih = sel.value;
+  kosong(sel);
   for (let i = 0; i < 12; i++) {
     const d = new Date(kini.getFullYear(), kini.getMonth() - i, 1);
     sel.appendChild(el('option', { value: d.getFullYear() + '-' + pad2(d.getMonth() + 1) },
       BULAN[d.getMonth()] + ' ' + d.getFullYear()));
   }
   sel.appendChild(el('option', { value:'semua' }, 'Sejak awal'));
+  if (dipilih && Array.from(sel.options).some(o => o.value === dipilih))
+    sel.value = dipilih;
 }
 
 function rentangPeriode() {
@@ -1166,9 +1212,19 @@ function ubahKantong(k) {
     ],
     onSimpan: v => {
       if (!v.nama) return 'Nama tidak boleh kosong.';
-      k.nama = v.nama; k.jenis = v.jenis;
-      if (!Store.db.kantong.some(x => x.jenis === 'milik_sendiri'))
+      /* validasi dulu, baru ubah — kalau ditolak sesudah diubah,
+         objeknya terlanjur rusak sampai halaman dimuat ulang */
+      const masihAdaMilikSendiri = Store.db.kantong.some(
+        x => x.id === k.id ? v.jenis === 'milik_sendiri' : x.jenis === 'milik_sendiri');
+      if (!masihAdaMilikSendiri)
         return 'Harus ada minimal satu sumber dana milik sendiri.';
+
+      k.nama = v.nama; k.jenis = v.jenis;
+      if (k.jenis === 'titipan' && k.is_default) {
+        k.is_default = false;
+        const milik = Store.db.kantong.find(x => x.jenis === 'milik_sendiri');
+        if (milik) milik.is_default = true;
+      }
       Store.simpan(); renderProfil();
     }
   });

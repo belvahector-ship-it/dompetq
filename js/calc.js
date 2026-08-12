@@ -129,16 +129,33 @@ const Calc = {
     return out;
   },
 
+  /* ID transaksi yang harus dikecualikan dari laporan: transaksi yang
+     sudah dikoreksi, beserta entri pembaliknya. Keduanya saling meniadakan.
+
+     Untuk SALDO keduanya justru harus tetap dihitung — hasilnya nol dan
+     itu benar. Tapi untuk laporan kategori & arus kas, memasukkan keduanya
+     membuat pengeluaran yang sudah dibatalkan tetap muncul di grafik dan
+     pembaliknya terhitung sebagai pemasukan. Dua kali salah. */
+  idDikoreksi(db) {
+    const skip = new Set();
+    for (const t of db.transaksi) {
+      if (t.reversal_dari) { skip.add(t.id); skip.add(t.reversal_dari); }
+    }
+    return skip;
+  },
+
   /* Pengeluaran per kategori dalam rentang tanggal.
      transfer sengaja tidak dihitung — itu bukan pengeluaran. */
   perKategori(db, dari, sampai, tipe) {
     tipe = tipe || 'keluar';
     const d = new Date(dari).getTime(), s = new Date(sampai).getTime();
+    const skip = this.idDikoreksi(db);
     const agg = {};
     let total = 0;
 
     for (const t of db.transaksi) {
       if (t.jenis !== tipe) continue;
+      if (skip.has(t.id)) continue;
       const w = new Date(t.timestamp).getTime();
       if (w < d || w > s) continue;
       const id = t.kategori_id || '_';
@@ -157,12 +174,14 @@ const Calc = {
   /* Arus kas periode — hanya dana milik sendiri kalau diminta */
   arusKas(db, dari, sampai, hanyaMilikSendiri) {
     const d = new Date(dari).getTime(), s = new Date(sampai).getTime();
+    const skip = this.idDikoreksi(db);
     let masuk = 0, keluar = 0;
 
     for (const t of db.transaksi) {
       const w = new Date(t.timestamp).getTime();
       if (w < d || w > s) continue;
       if (t.jenis !== 'masuk' && t.jenis !== 'keluar') continue;
+      if (skip.has(t.id)) continue;
 
       if (hanyaMilikSendiri) {
         const k = db.kantong.find(x => x.id === t.kantong_id);
