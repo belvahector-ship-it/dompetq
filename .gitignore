@@ -1,0 +1,11 @@
+# cadangan data pribadi — jangan pernah ikut ter-commit
+*-cadangan-*.json
+dompetq-transaksi-*.csv
+mutasi-*.csv
+
+# perkakas
+.DS_Store
+Thumbs.db
+node_modules/
+.vscode/
+.idea/

@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#FFFDF5">
+<meta name="description" content="Pencatat keuangan pribadi yang memisahkan di mana uang berada dari milik siapa uang itu.">
+<title>DompetQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+<!-- ══════════════ ONBOARDING ══════════════ -->
+<section class="screen" id="scr-onboarding">
+  <div class="ob-progress"><div class="ob-progress-bar" id="obBar"></div></div>
+  <div class="ob-wrap">
+
+    <!-- step 0: welcome -->
+    <div class="ob-step" data-step="0">
+      <div class="ob-hero">
+        <div class="ob-logo">Rp</div>
+        <h1>DompetQ</h1>
+        <p class="ob-tag">Tahu persis berapa uang yang <b>benar-benar</b> boleh kamu pakai.</p>
+      </div>
+      <div class="ob-points">
+        <div class="ob-point"><span>1</span><div><b>Di mana uang berada</b><small>Rekening, e-wallet, tunai</small></div></div>
+        <div class="ob-point"><span>2</span><div><b>Milik siapa uang itu</b><small>Uangmu sendiri, atau titipan orang lain</small></div></div>
+      </div>
+      <button class="btn btn-primary btn-block" data-ob-next>Mulai</button>
+    </div>
+
+    <!-- step 1: profil -->
+    <div class="ob-step" data-step="1" hidden>
+      <h2>Kenalan dulu</h2>
+      <p class="muted">Dipakai untuk sapaan dan judul laporan.</p>
+      <label class="field">
+        <span>Nama panggilan</span>
+        <input type="text" id="obNama" placeholder="mis. Rahma" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>Email <small class="muted">(opsional)</small></span>
+        <input type="email" id="obEmail" placeholder="untuk laporan & cadangan nanti" autocomplete="off">
+      </label>
+      <div class="ob-nav">
+        <button class="btn btn-ghost" data-ob-back>Kembali</button>
+        <button class="btn btn-primary" data-ob-next>Lanjut</button>
+      </div>
+    </div>
+
+    <!-- step 2: akun -->
+    <div class="ob-step" data-step="2" hidden>
+      <h2>Uangmu ada di mana saja?</h2>
+      <p class="muted">Tambahkan semua rekening, e-wallet, dan uang tunai yang kamu pegang.</p>
+
+      <div id="obAkunList" class="chip-list"></div>
+
+      <button class="btn btn-dashed btn-block" id="obAddAkun">+ Tambah rekening / dompet</button>
+
+      <div class="ob-nav">
+        <button class="btn btn-ghost" data-ob-back>Kembali</button>
+        <button class="btn btn-primary" data-ob-next>Lanjut</button>
+      </div>
+    </div>
+
+    <!-- step 3: sumber dana -->
+    <div class="ob-step" data-step="3" hidden>
+      <h2>Ada uang yang bukan milikmu?</h2>
+      <p class="muted">Uang yang kamu pegang tapi bukan hakmu — kas RT, arisan, dana kegiatan, titipan orang tua, modal bersama.</p>
+
+      <div class="choice-group" id="obPunyaTitipan">
+        <button class="choice" data-val="tidak">
+          <b>Tidak ada</b>
+          <small>Semua uang di rekening saya milik saya sendiri</small>
+        </button>
+        <button class="choice" data-val="ya">
+          <b>Ada</b>
+          <small>Saya memegang uang orang lain juga</small>
+        </button>
+      </div>
+
+      <div id="obTitipanWrap" hidden>
+        <div class="divider"></div>
+        <label class="field">
+          <span>Nama untuk uangmu sendiri</span>
+          <input type="text" id="obNamaPribadi" value="Uang Pribadi">
+        </label>
+        <p class="label-cap">Uang titipan yang kamu pegang</p>
+        <div id="obKantongList" class="chip-list"></div>
+        <button class="btn btn-dashed btn-block" id="obAddKantong">+ Tambah sumber dana titipan</button>
+      </div>
+
+      <div class="ob-nav">
+        <button class="btn btn-ghost" data-ob-back>Kembali</button>
+        <button class="btn btn-primary" data-ob-next>Lanjut</button>
+      </div>
+    </div>
+
+    <!-- step 4: saldo per akun -->
+    <div class="ob-step" data-step="4" hidden>
+      <h2>Berapa saldonya sekarang?</h2>
+      <p class="muted">Isi apa adanya, sesuai yang tertera hari ini. Nanti bisa dikoreksi.</p>
+      <div id="obSaldoList" class="saldo-list"></div>
+      <div class="total-row">
+        <span>Total di tangan</span>
+        <b id="obTotalFisik">Rp 0</b>
+      </div>
+      <div class="ob-nav">
+        <button class="btn btn-ghost" data-ob-back>Kembali</button>
+        <button class="btn btn-primary" data-ob-next>Lanjut</button>
+      </div>
+    </div>
+
+    <!-- step 5: matriks -->
+    <div class="ob-step" data-step="5" hidden>
+      <h2>Pecah per sumber dana</h2>
+      <p class="muted">Dari saldo tiap tempat, berapa yang milikmu dan berapa yang titipan? Ini yang bikin angka "uang saya bersih" jadi benar.</p>
+      <div id="obMatriks" class="matriks"></div>
+      <div class="ob-nav">
+        <button class="btn btn-ghost" data-ob-back>Kembali</button>
+        <button class="btn btn-primary" data-ob-next id="obMatriksNext">Lanjut</button>
+      </div>
+    </div>
+
+    <!-- step 6: kategori -->
+    <div class="ob-step" data-step="6" hidden>
+      <h2>Kategori yang kamu pakai</h2>
+      <p class="muted">Pilih yang relevan saja. Bisa ditambah kapan pun saat mencatat.</p>
+      <p class="label-cap">Pengeluaran</p>
+      <div id="obKatKeluar" class="pill-list"></div>
+      <p class="label-cap">Pemasukan</p>
+      <div id="obKatMasuk" class="pill-list"></div>
+      <div class="ob-nav">
+        <button class="btn btn-ghost" data-ob-back>Kembali</button>
+        <button class="btn btn-primary" data-ob-next>Selesai</button>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════ DASHBOARD ══════════════ -->
+<section class="screen" id="scr-dashboard" hidden>
+  <header class="topbar">
+    <div>
+      <small class="muted" id="dashSapaan">Halo</small>
+      <h1 id="dashNama">DompetQ</h1>
+    </div>
+  </header>
+
+  <div class="scroll">
+    <div class="hero-card" id="heroCard">
+      <small>Uang saya bersih</small>
+      <div class="hero-num" id="heroBersih">Rp 0</div>
+      <div class="hero-sub" id="heroSub"></div>
+    </div>
+
+    <div id="warnBox"></div>
+
+    <h3 class="sec-title">Rekening &amp; dompet</h3>
+    <div class="acc-scroll" id="dashAkun"></div>
+
+    <div id="dashKantongWrap">
+      <h3 class="sec-title">Sumber dana</h3>
+      <div class="kantong-list" id="dashKantong"></div>
+    </div>
+
+    <h3 class="sec-title">Pengeluaran 30 hari <small class="muted" id="dashTotalKeluar"></small></h3>
+    <div class="bars" id="dashBars"></div>
+
+    <h3 class="sec-title">Terakhir dicatat</h3>
+    <div class="tx-list" id="dashTx"></div>
+
+    <div class="pad-bottom"></div>
+  </div>
+</section>
+
+<!-- ══════════════ TRANSAKSI ══════════════ -->
+<section class="screen" id="scr-transaksi" hidden>
+  <header class="topbar">
+    <div><h1>Transaksi</h1></div>
+  </header>
+  <div class="filter-bar">
+    <input type="search" id="txCari" placeholder="Cari keterangan…" autocomplete="off">
+    <select id="txFilterKantong"></select>
+  </div>
+  <div class="scroll">
+    <div class="tx-list" id="txList"></div>
+    <div class="pad-bottom"></div>
+  </div>
+</section>
+
+<!-- ══════════════ LAPORAN ══════════════ -->
+<section class="screen" id="scr-laporan" hidden>
+  <header class="topbar"><div><h1>Laporan</h1></div></header>
+  <div class="scroll">
+    <label class="field">
+      <span>Periode</span>
+      <select id="lapPeriode"></select>
+    </label>
+
+    <div class="stat-grid" id="lapStat"></div>
+    <p class="fineprint" id="lapNote" hidden>Pemasukan &amp; pengeluaran di atas hanya menghitung dana milikmu sendiri. Uang titipan tidak ikut.</p>
+
+    <h3 class="sec-title">Pengeluaran per kategori</h3>
+    <div class="bars" id="lapBars"></div>
+
+    <h3 class="sec-title">Ekspor</h3>
+    <button class="btn btn-outline btn-block" id="lapCsv">Unduh CSV — semua transaksi</button>
+    <div id="lapPerKantong"></div>
+    <button class="btn btn-outline btn-block" id="lapBackup">Unduh cadangan data (JSON)</button>
+    <div class="pad-bottom"></div>
+  </div>
+</section>
+
+<!-- ══════════════ PROFIL ══════════════ -->
+<section class="screen" id="scr-profil" hidden>
+  <header class="topbar"><div><h1>Profil</h1></div></header>
+  <div class="scroll">
+    <div class="prof-head">
+      <div class="prof-ava" id="profAva">?</div>
+      <div>
+        <b id="profNama">—</b>
+        <small class="muted" id="profEmail"></small>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="profEdit">Edit</button>
+    </div>
+
+    <h3 class="sec-title">Rekening &amp; dompet</h3>
+    <div class="manage-list" id="mgAkun"></div>
+    <button class="btn btn-dashed btn-block" id="mgAddAkun">+ Tambah</button>
+
+    <h3 class="sec-title">Sumber dana</h3>
+    <div class="manage-list" id="mgKantong"></div>
+    <button class="btn btn-dashed btn-block" id="mgAddKantong">+ Tambah</button>
+
+    <h3 class="sec-title">Kategori</h3>
+    <div class="manage-list" id="mgKategori"></div>
+    <button class="btn btn-dashed btn-block" id="mgAddKategori">+ Tambah</button>
+
+    <h3 class="sec-title">Data</h3>
+    <button class="btn btn-outline btn-block" id="profRestore">Pulihkan dari cadangan</button>
+    <button class="btn btn-danger-ghost btn-block" id="profReset">Hapus semua data</button>
+    <p class="fineprint">Data tersimpan di perangkat ini saja. Rutin unduh cadangan dari halaman Laporan.</p>
+    <div class="pad-bottom"></div>
+  </div>
+</section>
+
+<!-- ══════════════ BOTTOM NAV ══════════════ -->
+<nav id="bottomnav" hidden>
+  <button data-nav="dashboard" class="active">
+    <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V21H3z"/></svg><span>Beranda</span>
+  </button>
+  <button data-nav="transaksi">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Transaksi</span>
+  </button>
+  <button id="fab" aria-label="Catat transaksi">+</button>
+  <button data-nav="laporan">
+    <svg viewBox="0 0 24 24"><path d="M5 20V10M12 20V4M19 20v-7"/></svg><span>Laporan</span>
+  </button>
+  <button data-nav="profil">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg><span>Profil</span>
+  </button>
+</nav>
+
+<!-- ══════════════ SHEET: INPUT TRANSAKSI ══════════════ -->
+<div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+<div class="sheet" id="sheetInput" hidden>
+  <div class="sheet-grip"></div>
+
+  <div class="seg" id="txJenis">
+    <button data-j="keluar" class="active">Keluar</button>
+    <button data-j="masuk">Masuk</button>
+    <button data-j="transfer">Pindah</button>
+  </div>
+
+  <div class="amount-wrap">
+    <span class="amount-cur">Rp</span>
+    <input type="text" inputmode="numeric" id="txNominal" placeholder="0" autocomplete="off">
+  </div>
+
+  <div class="form-rows" id="txRows"></div>
+
+  <label class="field">
+    <span>Keterangan <small class="muted">(opsional)</small></span>
+    <input type="text" id="txKet" placeholder="mis. bensin motor" autocomplete="off">
+  </label>
+
+  <label class="field">
+    <span>Tanggal</span>
+    <input type="date" id="txTgl">
+  </label>
+
+  <div id="txError" class="err" hidden></div>
+
+  <div class="sheet-actions">
+    <button class="btn btn-ghost" id="txCancel">Batal</button>
+    <button class="btn btn-primary" id="txSave">Simpan</button>
+  </div>
+</div>
+
+<!-- ══════════════ MODAL GENERIK ══════════════ -->
+<div class="modal-backdrop" id="modalBackdrop" hidden></div>
+<div class="modal" id="modal" hidden>
+  <h3 id="modalTitle"></h3>
+  <div id="modalBody"></div>
+  <div class="modal-actions" id="modalActions"></div>
+</div>
+
+<div id="toast"></div>
+
+</div>
+
+<script src="js/seed.js"></script>
+<script src="js/store.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
