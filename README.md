@@ -47,11 +47,34 @@ Rutin unduh cadangan dari halaman **Laporan → Unduh cadangan data (JSON)**.
 
 Semua akses data lewat `Store` di [js/store.js](js/store.js), yang memakai adapter. Pindah ke Google Sheets nanti = menambah `SheetsAdapter` dengan antarmuka yang sama (`muat`, `simpan`, `hapus`). Tidak ada kode lain yang perlu berubah.
 
+## Google Cloud — sudah disiapkan
+
+Proyek OAuth untuk tahap berikutnya (sinkron ke Google Sheets) sudah dibuat.
+
+| | |
+|---|---|
+| Proyek | **DompetQ** — `dompetq-belva-2026` |
+| Pemilik | belvahector69@gmail.com |
+| API aktif | Google Sheets API, Google Drive API |
+| Publishing status | Testing — maksimal 100 test user, belum perlu verifikasi Google |
+| OAuth client | `DompetQ Web`, tipe Web application |
+| Origin terdaftar | GitHub Pages, `127.0.0.1:8765`, `localhost:8765` |
+
+Client ID ada di [js/config.js](js/config.js) — memang publik, dan aman berada di repo ini.
+Client secret **tidak dipakai** oleh aplikasi front-end statis dan tidak boleh masuk repo.
+
+Yang masih perlu dilakukan sebelum integrasi Sheets jalan:
+
+1. Deklarasikan scope di **Google Auth Platform → Data Access** (`drive.file`, `spreadsheets`, `openid`, `email`, `profile`). Opsional selama mode Testing, wajib saat mengajukan verifikasi.
+2. Tambahkan test user lain kalau ada orang selain pemilik yang mau mencoba.
+3. Bangun `SheetsAdapter` di [js/store.js](js/store.js).
+
 ## Struktur
 
 ```
 index.html        kerangka semua layar
-css/style.css     mobile-first, ikut tema terang/gelap perangkat
+css/style.css     soft neo-brutalist, mobile-first
+js/config.js      Client ID & scope Google Cloud
 js/seed.js        daftar bank, e-wallet, saran kategori
 js/store.js       lapisan penyimpanan + operasi data
 js/calc.js        semua perhitungan saldo (matriks akun × sumber dana)
