@@ -6,6 +6,10 @@
 <meta name="theme-color" content="#FFFDF5">
 <meta name="description" content="Pencatat keuangan pribadi yang memisahkan di mana uang berada dari milik siapa uang itu.">
 <title>DompetQ</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="img/ikon-32.png">
+<link rel="apple-touch-icon" href="img/ikon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -23,7 +27,7 @@
     <!-- step 0: welcome -->
     <div class="ob-step" data-step="0">
       <div class="ob-hero">
-        <div class="ob-logo">Rp</div>
+        <img class="ob-maskot" src="img/maskot.png" alt="" width="520" height="905">
         <h1>DompetQ</h1>
         <p class="ob-tag">Tahu persis berapa uang yang <b>benar-benar</b> boleh kamu pakai.</p>
       </div>
@@ -69,6 +73,7 @@
 
     <!-- step 3: sumber dana -->
     <div class="ob-step" data-step="3" hidden>
+      <img class="ob-ilustrasi" src="img/hero.png" alt="" width="900" height="507">
       <h2>Ada uang yang bukan milikmu?</h2>
       <p class="muted">Uang yang kamu pegang tapi bukan hakmu — kas RT, arisan, dana kegiatan, titipan orang tua, modal bersama.</p>
 
@@ -242,6 +247,9 @@
     <div class="manage-list" id="mgKategori"></div>
     <button class="btn btn-dashed btn-block" id="mgAddKategori">+ Tambah</button>
 
+    <h3 class="sec-title">Google Sheets</h3>
+    <div id="mgSheets"></div>
+
     <h3 class="sec-title">Data</h3>
     <button class="btn btn-outline btn-block" id="profRestore">Pulihkan dari cadangan</button>
     <button class="btn btn-danger-ghost btn-block" id="profReset">Hapus semua data</button>
@@ -318,6 +326,7 @@
 <script src="js/config.js"></script>
 <script src="js/seed.js"></script>
 <script src="js/store.js"></script>
+<script src="js/sheets.js"></script>
 <script src="js/calc.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>

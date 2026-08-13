@@ -147,13 +147,16 @@ input,select{font:inherit;color:inherit}
 .ob-nav .btn-ghost{flex:0 0 auto}
 .ob-nav .btn-primary{flex:1}
 
-.ob-hero{text-align:center;padding:32px 0 26px}
-.ob-logo{
-  width:74px;height:74px;border-radius:20px;background:var(--amber);color:var(--ink);
-  border:var(--bd) solid var(--ink);box-shadow:var(--sh);
-  display:flex;align-items:center;justify-content:center;
-  font-family:var(--font-display);font-size:26px;font-weight:700;
-  margin:0 auto 22px;transform:rotate(-3deg);
+.ob-hero{text-align:center;padding:8px 0 24px}
+/* latar sudah dibuat transparan, jadi maskot menyatu dengan layar
+   apa pun warnanya. Dibatasi TINGGI, bukan lebar — sosoknya jangkung,
+   membatasi lebar membuatnya menjulang di layar pendek. */
+.ob-maskot{
+  display:block;width:auto;height:min(220px,30vh);margin:0 auto 10px;
+}
+.ob-ilustrasi{
+  display:block;width:100%;height:auto;margin:0 0 20px;
+  border:var(--bd) solid var(--ink);border-radius:var(--r);box-shadow:var(--sh-sm);
 }
 .ob-hero h1{font-size:34px;margin-bottom:12px}
 .ob-tag{color:var(--ink-2);font-size:15.5px;max-width:310px;margin:0 auto;line-height:1.55;font-weight:500}

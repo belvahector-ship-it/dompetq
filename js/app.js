@@ -70,7 +70,12 @@ function pasangPengamanData() {
     });
   };
 
-  /* 2. Tulis tertunda ikut turun saat halaman ditutup atau berpindah ke latar. */
+  /* 2. Status sinkron di halaman Profil ikut berubah sendiri. */
+  Store.onSinkronBerubah = () => {
+    if (layarAktif === 'profil') renderSheets();
+  };
+
+  /* 3. Tulis tertunda ikut turun saat halaman ditutup atau berpindah ke latar. */
   const turunkan = () => Store.flush();
   window.addEventListener('pagehide', turunkan);
   document.addEventListener('visibilitychange', () => {
@@ -93,6 +98,7 @@ const OB = {
   katMasuk: new Set(),
 
   mulai() {
+    ['dashboard','transaksi','laporan','profil'].forEach(n => $('#scr-' + n).hidden = true);
     $('#scr-onboarding').hidden = false;
     $('#bottomnav').hidden = true;
     this.katKeluar = new Set(['Makan & Minum','Belanja Harian','Transport','Pulsa & Internet','Lain-lain']);
@@ -1127,9 +1133,126 @@ function pasangProfil() {
   });
 }
 
+/* ── Google Sheets ── */
+function renderSheets() {
+  const w = kosong($('#mgSheets'));
+  const s = Store.sinkron;
+
+  if (!s.aktif) {
+    w.appendChild(el('div', { class:'mg' }, [
+      el('div', { class:'mg-body' }, [
+        el('b', null, 'Belum tersambung'),
+        el('small', null, 'Data hanya ada di perangkat ini')
+      ])
+    ]));
+    w.appendChild(el('button', {
+      class:'btn btn-primary btn-block', style:'margin-top:10px',
+      onclick: sambungkanGoogle
+    }, 'Sambungkan Google Sheets'));
+    w.appendChild(el('p', { class:'fineprint' },
+      'Spreadsheet dibuat di Google Drive milikmu sendiri. Pembuat aplikasi ini ' +
+      'tidak bisa membukanya. Kamu bisa mencabut aksesnya kapan pun.'));
+    return;
+  }
+
+  const status = s.sedang ? 'Menyimpan…'
+               : s.galat  ? s.galat
+               : s.terakhir ? 'Tersimpan ' + tglRelatif(s.terakhir).toLowerCase() +
+                              ', ' + jamSingkat(s.terakhir)
+               : 'Tersambung';
+
+  w.appendChild(el('div', { class:'mg' }, [
+    el('div', { class:'kt-dot', style:'background:' + (s.galat ? 'var(--red)' : 'var(--green)') }),
+    el('div', { class:'mg-body' }, [
+      el('b', null, (Google.profil && Google.profil.email) || 'Tersambung'),
+      el('small', null, status)
+    ])
+  ]));
+
+  const tautan = SheetsAdapter.tautan();
+  if (tautan) {
+    w.appendChild(el('a', {
+      class:'btn btn-outline btn-block', style:'margin-top:10px;text-decoration:none',
+      href: tautan, target:'_blank', rel:'noopener'
+    }, 'Buka spreadsheet di Drive'));
+  }
+
+  w.appendChild(el('button', {
+    class:'btn btn-outline btn-block',
+    onclick: () => {
+      toast('Menyimpan ke Sheets…');
+      Store.simpanSekarang();
+    }
+  }, 'Simpan sekarang'));
+
+  w.appendChild(el('button', {
+    class:'btn btn-danger-ghost btn-block',
+    onclick: () => Modal.konfirmasi({
+      judul:'Putuskan sambungan?',
+      pesan:'Spreadsheet di Drive-mu tidak dihapus — hanya kaitannya dengan aplikasi ini yang dilepas. Data di perangkat tetap utuh.',
+      labelYa:'Putuskan', gayaYa:'btn-danger-ghost',
+      onYa: () => { Store.putuskanSheets(); renderProfil(); toast('Sambungan diputus'); }
+    })
+  }, 'Putuskan sambungan'));
+}
+
+function jamSingkat(iso) {
+  const d = new Date(iso);
+  return pad2(d.getHours()) + '.' + pad2(d.getMinutes());
+}
+
+async function sambungkanGoogle() {
+  toast('Membuka login Google…');
+  let putusan;
+  try {
+    putusan = await Store.sambungkanSheets();
+  } catch (e) {
+    Modal.buka({
+      judul: 'Gagal menyambungkan',
+      isi: el('p', { class:'muted', style:'margin:0' }, e.message),
+      aksi: [{ label:'Tutup', gaya:'btn-primary' }]
+    });
+    return;
+  }
+
+  const pakai = async (arah, jauh) => {
+    toast('Menyinkronkan…');
+    const ok = await Store.terapkanSinkron(arah, jauh);
+    renderProfil();
+    toast(ok ? 'Tersambung ke Google Sheets' : 'Tersambung, tapi tulis pertama gagal');
+    if (arah !== 'unggah') segarkan();
+  };
+
+  if (putusan.cara !== 'bentrok') {
+    await pakai(putusan.cara === 'unduh' ? 'unduh' : 'unggah', putusan.db);
+    return;
+  }
+
+  /* Dua-duanya berisi transaksi. Ini keputusan pengguna, bukan
+     keputusan aplikasi — salah pilih berarti kehilangan catatan uang. */
+  const jauh = putusan.jauh, lokal = putusan.lokal;
+  Modal.buka({
+    judul: 'Dua-duanya sudah berisi',
+    isi: el('div', null, [
+      el('p', { class:'muted', style:'margin-top:0' },
+        `Di perangkat ini ada ${lokal.transaksi.length} transaksi, ` +
+        `di Google Sheets ada ${jauh.transaksi.length}. Mau diapakan?`),
+      el('p', { class:'fineprint', style:'margin:0' },
+        'Menyatukan adalah pilihan paling aman: transaksi punya ID unik, ' +
+        'jadi tidak ada yang dobel dan tidak ada yang hilang.')
+    ]),
+    aksi: [
+      { label:'Batal' },
+      { label:'Pakai Sheets', aksi: () => pakai('unduh', jauh) },
+      { label:'Satukan', gaya:'btn-primary', aksi: () => pakai('satukan', jauh) }
+    ]
+  });
+}
+
 function renderProfil() {
   const db = Store.db;
   const r = Calc.ringkas(db);
+  renderSheets();
 
   $('#profNama').textContent = db.profil.nama || '—';
   $('#profEmail').textContent = db.profil.email || 'Belum diisi';

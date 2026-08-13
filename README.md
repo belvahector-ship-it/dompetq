@@ -42,10 +42,23 @@ Lalu buka `http://127.0.0.1:8765` di browser. Di HP, ganti `127.0.0.1` dengan IP
 
 ## Penyimpanan
 
-Sekarang di `localStorage` browser — **hanya di perangkat itu**. Hapus riwayat browser = data hilang.
-Rutin unduh cadangan dari halaman **Laporan → Unduh cadangan data (JSON)**.
+**Lokal selalu jadi sumber baca.** Cepat, jalan tanpa internet, dan tidak pernah kehilangan data kalau Google sedang bermasalah.
 
-Semua akses data lewat `Store` di [js/store.js](js/store.js), yang memakai adapter. Pindah ke Google Sheets nanti = menambah `SheetsAdapter` dengan antarmuka yang sama (`muat`, `simpan`, `hapus`). Tidak ada kode lain yang perlu berubah.
+**Google Sheets dipasang sebagai cermin** — tujuan tulis kedua, bukan pengganti. Gagal menulis ke Sheets tidak pernah menghilangkan transaksi karena salinannya sudah ada di perangkat. Tulis ke Sheets berjalan di latar dan tidak ditunggu; pengguna tidak boleh menunggu jaringan untuk mencatat satu pengeluaran.
+
+Menyambungkan: **Profil → Sambungkan Google Sheets**. Spreadsheet `dompetq-data` dibuat di Drive milik pengguna sendiri.
+
+Saat menyambung, ada tiga kemungkinan:
+
+| Keadaan | Yang terjadi |
+|---|---|
+| Sheets masih kosong | Data perangkat diunggah |
+| Perangkat masih kosong | Data Sheets diunduh |
+| Dua-duanya berisi | Pengguna memilih: pakai Sheets, atau **satukan** |
+
+Menyatukan aman karena transaksi ber-ID unik dan bersifat append-only — tidak ada yang dobel, tidak ada yang hilang. Master data (akun, sumber dana, kategori) tidak digabung otomatis; itu keputusan pengguna.
+
+Tetap rutin unduh cadangan JSON dari halaman **Laporan** — itu satu-satunya salinan yang tidak bergantung pada browser maupun Google.
 
 ## Google Cloud — sudah disiapkan
 
@@ -77,10 +90,19 @@ css/style.css     soft neo-brutalist, mobile-first
 js/config.js      Client ID & scope Google Cloud
 js/seed.js        daftar bank, e-wallet, saran kategori
 js/store.js       lapisan penyimpanan + operasi data
+js/sheets.js      login Google, SheetsAdapter, logika sinkron
 js/calc.js        semua perhitungan saldo (matriks akun × sumber dana)
 js/ui.js          format rupiah/tanggal, modal, toast
 js/app.js         routing, onboarding, layar
+img/              maskot, ilustrasi, ikon aplikasi
+img/sumber/       PNG asli dari generator, sebelum diproses
 ```
+
+## Aset gambar
+
+Maskot dan ilustrasi dibuat dengan generator gambar, lalu diproses: latar maskot dibuat transparan lewat flood fill dari tepi (supaya krem di dalam garis luar tidak ikut terhapus), semuanya diubah ukuran dan dikuantisasi ke palet 64 warna.
+
+Ilustrasi berwarna datar dengan garis tebal sangat diuntungkan palet: **4,2 MB → 161 KB, tanpa penurunan yang terlihat.** Aslinya disimpan di `img/sumber/`.
 
 Aturan penting: **saldo akun dan saldo sumber dana tidak pernah dihitung terpisah.** Keduanya turunan dari satu matriks di `Calc.matriks()`, supaya tidak mungkin saling bertentangan.
 

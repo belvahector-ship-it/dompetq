@@ -65,7 +65,18 @@ function validasiSkema(db) {
 /* ── Store: satu-satunya pintu ke data ───────── */
 const Store = {
   db: null,
+
+  /* Lokal selalu jadi sumber baca: cepat, jalan tanpa internet,
+     dan tidak pernah kehilangan data kalau Google sedang bermasalah.
+     Sheets dipasang sebagai CERMIN — tujuan tulis kedua, bukan
+     pengganti. Gagal menulis ke Sheets tidak pernah menghilangkan
+     transaksi, karena salinannya sudah ada di perangkat. */
   adapter: LocalAdapter,
+  cermin: null,
+
+  sinkron: { aktif:false, terakhir:null, sedang:false, galat:null },
+  onSinkronBerubah: null,
+
   _pending: null,
 
   async init() {
@@ -99,8 +110,7 @@ const Store = {
      Pola yang sama nanti dipakai untuk batch Sheets API. */
   simpan() {
     clearTimeout(this._pending);
-    this._pending = setTimeout(
-      () => this.adapter.simpan(this.db).then(ok => this._lapor(ok)), 250);
+    this._pending = setTimeout(() => this._tulis(), 250);
   },
 
   /* Untuk apa pun yang menyangkut uang — tulis seketika, tanpa jeda.
@@ -108,7 +118,37 @@ const Store = {
      atau di-refresh tepat sesudah simpan. */
   async simpanSekarang() {
     clearTimeout(this._pending);
-    return this._lapor(await this.adapter.simpan(this.db));
+    return this._tulis();
+  },
+
+  async _tulis() {
+    const ok = await this.adapter.simpan(this.db);
+    this._lapor(ok);
+    this._cerminkan();
+    return ok;
+  },
+
+  /* Tulis ke Sheets berjalan di latar dan TIDAK ditunggu. Pengguna
+     tidak boleh menunggu jaringan untuk mencatat satu pengeluaran. */
+  _cerminkan() {
+    if (!this.cermin || !this.sinkron.aktif) return;
+    this.sinkron.sedang = true;
+    this._kabarkanSinkron();
+
+    this.cermin.simpan(this.db).then(ok => {
+      this.sinkron.sedang = false;
+      if (ok) { this.sinkron.terakhir = new Date().toISOString(); this.sinkron.galat = null; }
+      else    { this.sinkron.galat = 'Gagal menulis ke Google Sheets.'; }
+      this._kabarkanSinkron();
+    }).catch(e => {
+      this.sinkron.sedang = false;
+      this.sinkron.galat = e.message;
+      this._kabarkanSinkron();
+    });
+  },
+
+  _kabarkanSinkron() {
+    if (typeof this.onSinkronBerubah === 'function') this.onSinkronBerubah(this.sinkron);
   },
 
   /* Dipanggil saat halaman ditutup — pastikan tulisan tertunda ikut turun. */
@@ -117,7 +157,52 @@ const Store = {
       clearTimeout(this._pending);
       this._pending = null;
       this.adapter.simpan(this.db);
+      this._cerminkan();
     }
+  },
+
+  /* ── Google Sheets ──────────────────────────
+     Menyambungkan akun: masuk, baca yang ada di Drive, lalu
+     putuskan arah sinkronnya. Mengembalikan objek keputusan;
+     kalau 'bentrok', pemanggil yang bertanya ke pengguna. */
+  async sambungkanSheets() {
+    await Google.masuk();
+    const jauh = await SheetsAdapter.muat();
+    const putusan = Sinkron.gabung(this.db, jauh);
+    putusan.email = Google.profil ? Google.profil.email : '';
+    return putusan;
+  },
+
+  /* Menerapkan keputusan sinkron. arah:
+       'unggah'  — data perangkat menang, ditulis ke Sheets
+       'unduh'   — data Sheets menang, menggantikan yang di perangkat
+       'satukan' — transaksi digabung, master data dari perangkat */
+  async terapkanSinkron(arah, jauh) {
+    if (arah === 'unduh' && jauh) {
+      this.db = jauh;
+    } else if (arah === 'satukan' && jauh) {
+      this.db.transaksi = Sinkron.satukanTransaksi(this.db.transaksi, jauh.transaksi);
+    }
+
+    this.cermin = SheetsAdapter;
+    this.sinkron.aktif = true;
+    this.sinkron.galat = null;
+
+    await this.adapter.simpan(this.db);          // lokal dulu, selalu
+    const ok = await SheetsAdapter.simpan(this.db);
+    this.sinkron.sedang = false;
+    if (ok) this.sinkron.terakhir = new Date().toISOString();
+    else    this.sinkron.galat = 'Gagal menulis ke Google Sheets.';
+    this._kabarkanSinkron();
+    return ok;
+  },
+
+  putuskanSheets() {
+    Google.keluar();
+    SheetsAdapter.hapus();
+    this.cermin = null;
+    this.sinkron = { aktif:false, terakhir:null, sedang:false, galat:null };
+    this._kabarkanSinkron();
   },
 
   async reset() {
