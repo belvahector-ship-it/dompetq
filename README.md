@@ -32,6 +32,26 @@ Lalu buka `http://127.0.0.1:8765` di browser. Di HP, ganti `127.0.0.1` dengan IP
 - Laporan bulanan + ekspor CSV, mutasi per sumber dana, dan cadangan JSON
 - Mode sederhana: kalau tidak ada uang titipan, seluruh UI sumber dana hilang sendiri
 
+**Pengingat pemasukan & pengeluaran**
+
+Pengingat di sini bukan notifikasi yang lewat begitu saja, melainkan **pertanyaan yang menunggu dijawab**. Selama belum dijawab untuk periode berjalan, ia muncul lagi setiap kali aplikasi dibuka.
+
+Tiap pengingat punya tiga keadaan: *terpenuhi* (sudah dicatat, diam sampai periode berikutnya), *ditunda* ("belum, ingatkan besok"), dan *menunggu* (jatuh tempo lewat, belum dijawab).
+
+Jadwal bisa harian, mingguan, atau bulanan. Tanggal 31 pada bulan pendek jatuh di hari terakhir bulan itu, tidak tumpah ke bulan berikutnya.
+
+Yang **tidak** dilakukan: mencatat transaksi sendiri. Pengingat hanya bertanya; nominal dan tombol simpan tetap di tangan pengguna. Uang tidak boleh dicatat oleh tebakan aplikasi.
+
+Notifikasi browser hanya muncul selagi aplikasi terbuka. Setelah dibungkus jadi APK, izin yang sama dipakai notifikasi sistem sehingga bisa muncul walau aplikasi tertutup.
+
+**Kunci saldo**
+
+Setelah saldo dipastikan benar, nominal rekening bisa dikunci dengan PIN agar tidak berubah tanpa sengaja. PIN disimpan sebagai SHA-256 dari garam + PIN, bukan apa adanya.
+
+Ini **rem, bukan pengaman**. Siapa pun yang paham browser tetap bisa menembusnya — jangan pakai PIN yang sama dengan PIN bank.
+
+Saldo tidak pernah diedit langsung. Kalau angka di aplikasi beda dengan kenyataan, selisihnya dicatat sebagai transaksi penyesuaian sehingga riwayat tetap utuh — selisih itu sendiri sering menandakan ada transaksi yang lupa dicatat.
+
 **Belum** — sengaja ditunda (lihat konsep.md §10)
 
 - Login Google & sinkron ke Google Sheets
@@ -91,6 +111,7 @@ js/config.js      Client ID & scope Google Cloud
 js/seed.js        daftar bank, e-wallet, saran kategori
 js/store.js       lapisan penyimpanan + operasi data
 js/sheets.js      login Google, SheetsAdapter, logika sinkron
+js/pengingat.js   jadwal, jatuh tempo, notifikasi
 js/calc.js        semua perhitungan saldo (matriks akun × sumber dana)
 js/ui.js          format rupiah/tanggal, modal, toast
 js/app.js         routing, onboarding, layar

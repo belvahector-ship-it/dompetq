@@ -16,12 +16,15 @@ const LS_KEY = 'dompetq:db:v1';
 function dbKosong() {
   return {
     versi_skema: SKEMA_VERSI,
-    profil:   { nama:'', email:'', tanggal_mulai:'' },
+    profil:   { nama:'', email:'', tanggal_mulai:'',
+                /* kunci saldo — lihat Store.kunci* di bawah */
+                kunci_hash:'', kunci_garam:'', saldo_terkunci:false },
     akun:     [],   // {id,nama,bank_kode,jenis,is_default,urutan,aktif}
     kantong:  [],   // {id,nama,jenis,is_default,warna,catatan}
     kategori: [],   // {id,nama,tipe,ikon}
     pihak:    [],   // {id,nama,tipe,kontak}
-    transaksi:[]    // lihat konsep.md §6.3
+    transaksi:[],   // lihat konsep.md §6.3
+    pengingat:[]    // lihat js/pengingat.js
   };
 }
 
@@ -34,7 +37,7 @@ const LocalAdapter = {
       const raw = localStorage.getItem(LS_KEY);
       if (!raw) return null;
       const db = JSON.parse(raw);
-      return validasiSkema(db) ? db : null;
+      return validasiSkema(db) ? lengkapiSkema(db) : null;
     } catch (e) {
       console.error('Gagal membaca penyimpanan lokal:', e);
       return null;
@@ -60,6 +63,28 @@ function validasiSkema(db) {
   if (!db || typeof db !== 'object') return false;
   const wajib = ['akun','kantong','kategori','transaksi'];
   return wajib.every(k => Array.isArray(db[k]));
+}
+
+/* Melengkapi data lama dengan bidang yang belum ada.
+
+   Data yang sudah tersimpan di perangkat pengguna dibuat oleh versi
+   aplikasi yang lebih tua dan TIDAK memuat bidang baru. Tanpa ini,
+   menambah satu fitur akan merusak aplikasi semua orang yang sudah
+   memakainya. Dijalankan pada tiap pemuatan, apa pun sumbernya. */
+function lengkapiSkema(db) {
+  const contoh = dbKosong();
+
+  Object.keys(contoh).forEach(k => {
+    if (Array.isArray(contoh[k]) && !Array.isArray(db[k])) db[k] = [];
+  });
+
+  db.profil = db.profil || {};
+  Object.keys(contoh.profil).forEach(k => {
+    if (db.profil[k] === undefined) db.profil[k] = contoh.profil[k];
+  });
+
+  if (!db.versi_skema) db.versi_skema = SKEMA_VERSI;
+  return db;
 }
 
 /* ── Store: satu-satunya pintu ke data ───────── */
@@ -341,18 +366,112 @@ const Store = {
     return this.db.kantong.filter(k => k.jenis === 'titipan').length === 0;
   },
 
+  /* ── penyesuaian saldo ──
+     Saldo TIDAK PERNAH diedit langsung. Kalau angka di aplikasi
+     berbeda dengan kenyataan, selisihnya dicatat sebagai transaksi
+     penyesuaian. Riwayat tetap utuh dan selisihnya terlihat —
+     itu justru sering menandakan ada transaksi yang lupa dicatat. */
+  sesuaikanSaldo(akunId, saldoBaru, kantongId) {
+    const sekarang = Calc.ringkas(this.db).saldoAkun[akunId] || 0;
+    const selisih = Math.round(saldoBaru) - sekarang;
+    if (selisih === 0) return null;
+
+    const kat = this.tambahKategori({
+      nama: 'Penyesuaian Saldo',
+      tipe: selisih > 0 ? 'pemasukan' : 'pengeluaran'
+    });
+
+    return this.catat({
+      jenis: selisih > 0 ? 'masuk' : 'keluar',
+      nominal: Math.abs(selisih),
+      akun_id: akunId,
+      kantong_id: kantongId || this.kantongDefault().id,
+      kategori_id: kat.id,
+      keterangan: 'Penyesuaian saldo'
+    });
+  },
+
+  /* ── kunci saldo ──
+     Bukan pengamanan, melainkan REM. Setelah saldo dipastikan benar,
+     kunci mencegah angka pokok berubah tanpa sengaja. Siapa pun yang
+     membuka devtools tetap bisa menembusnya — jangan pernah pakai PIN
+     yang sama dengan PIN bank. */
+  async pasangKunci(pin) {
+    const garam = uid('grm');
+    this.db.profil.kunci_garam = garam;
+    this.db.profil.kunci_hash = await hashPin(pin, garam);
+    this.db.profil.saldo_terkunci = true;
+    await this.simpanSekarang();
+  },
+
+  async cocokPin(pin) {
+    const p = this.db.profil;
+    if (!p.kunci_hash) return false;
+    return (await hashPin(pin, p.kunci_garam)) === p.kunci_hash;
+  },
+
+  async bukaKunci(pin) {
+    if (!(await this.cocokPin(pin))) return false;
+    this.db.profil.saldo_terkunci = false;
+    await this.simpanSekarang();
+    return true;
+  },
+
+  async kunciLagi() {
+    this.db.profil.saldo_terkunci = true;
+    await this.simpanSekarang();
+  },
+
+  async hapusKunci(pin) {
+    if (!(await this.cocokPin(pin))) return false;
+    this.db.profil.kunci_hash = '';
+    this.db.profil.kunci_garam = '';
+    this.db.profil.saldo_terkunci = false;
+    await this.simpanSekarang();
+    return true;
+  },
+
+  terkunci() { return !!this.db.profil.saldo_terkunci; },
+  punyaKunci() { return !!this.db.profil.kunci_hash; },
+
+  /* ── pengingat ── */
+  tambahPengingat(p) {
+    const baru = Object.assign({
+      id: uid('igt'), judul:'', arah:'masuk', nominal:0,
+      jadwal_tipe:'bulanan', jadwal_nilai:1,
+      akun_id:'', kantong_id:'', kategori_id:'',
+      aktif:true, terakhir_dipenuhi:'', ditunda_sampai:''
+    }, p);
+    this.db.pengingat.push(baru);
+    this.simpan();
+    return baru;
+  },
+  hapusPengingat(id) {
+    this.db.pengingat = this.db.pengingat.filter(p => p.id !== id);
+    this.simpan();
+  },
+
   /* ── cadangan ── */
   ekspor() { return JSON.stringify(this.db, null, 2); },
   async impor(json) {
     const db = JSON.parse(json);
     if (!validasiSkema(db)) throw new Error('Struktur file cadangan tidak dikenali.');
-    this.db = db;
+    this.db = lengkapiSkema(db);
     await this.simpanSekarang();
   }
 };
 
 function uid(pre) {
   return pre + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+/* PIN tidak pernah disimpan apa adanya. Yang disimpan hasil SHA-256
+   dari garam + PIN, jadi isi penyimpanan tidak membocorkan PIN-nya. */
+async function hashPin(pin, garam) {
+  const data = new TextEncoder().encode(garam + ':' + String(pin));
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 function namaJenis(j) {

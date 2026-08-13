@@ -251,12 +251,19 @@
     </div>
 
     <h3 class="sec-title">Rekening &amp; dompet</h3>
+    <div id="mgKunci"></div>
     <div class="manage-list" id="mgAkun"></div>
     <button class="btn btn-dashed btn-block" id="mgAddAkun">+ Tambah</button>
 
     <h3 class="sec-title">Sumber dana</h3>
     <div class="manage-list" id="mgKantong"></div>
     <button class="btn btn-dashed btn-block" id="mgAddKantong">+ Tambah</button>
+    <button class="btn btn-outline btn-block" id="mgAturTitipan" style="margin-top:10px">Atur total dana titipan</button>
+
+    <h3 class="sec-title" id="stPengingat">Pengingat</h3>
+    <div class="manage-list" id="mgPengingat"></div>
+    <button class="btn btn-dashed btn-block" id="mgAddPengingat">+ Tambah pengingat</button>
+    <div id="mgNotif"></div>
 
     <h3 class="sec-title">Kategori</h3>
     <div class="manage-list" id="mgKategori"></div>
@@ -293,7 +300,7 @@
 <!-- ══════════════ SHEET: INPUT TRANSAKSI ══════════════ -->
 <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
 <div class="sheet" id="sheetInput" hidden>
-  <div class="sheet-grip"></div>
+  <button class="sheet-grip" id="sheetGrip" aria-label="Tutup"><span></span></button>
 
   <div class="seg" id="txJenis">
     <button data-j="keluar" class="active">Keluar</button>
@@ -342,6 +349,7 @@
 <script src="js/seed.js"></script>
 <script src="js/store.js"></script>
 <script src="js/sheets.js"></script>
+<script src="js/pengingat.js"></script>
 <script src="js/calc.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/app.js"></script>

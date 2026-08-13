@@ -328,6 +328,36 @@ input,select{font:inherit;color:inherit}
 .hitung.bahaya .hitung-pesan{color:var(--red-ink)}
 .hitung-pesan .ikon{margin-top:1px}
 
+/* ── kunci saldo ── */
+.kunci-bar{
+  display:flex;align-items:center;gap:11px;padding:12px 13px;margin-bottom:10px;
+  background:var(--surface);border:var(--bd) solid var(--ink);
+  border-radius:var(--r-sm);box-shadow:var(--sh-sm);
+}
+.kunci-bar.aktif{background:var(--amber-soft)}
+.kunci-ikon{flex:none;display:flex;width:34px;height:34px;border-radius:10px;
+  border:2px solid var(--ink);background:var(--surface);
+  align-items:center;justify-content:center}
+.kunci-bar.aktif .kunci-ikon{background:var(--amber)}
+.isian-pin{letter-spacing:.5em;font-family:var(--font-num);text-align:center;font-size:20px}
+
+/* ── pengingat ── */
+.mg.redup{opacity:.5}
+.igt-nominal{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 14px;border:var(--bd) solid var(--ink);border-radius:var(--r-sm);
+  background:var(--amber-soft);
+}
+.igt-nominal small{font-size:11px;font-weight:800;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--ink-2)}
+.igt-nominal b{font-family:var(--font-num);font-size:18px}
+.igt-lewati{
+  display:block;width:100%;margin:14px 0 0;padding:6px;
+  font-size:12px;font-weight:700;color:var(--ink-3);
+  text-transform:uppercase;letter-spacing:.05em;
+}
+.igt-lewati:active{color:var(--ink)}
+
 /* ── footer kredit ── */
 .kredit{
   display:flex;align-items:center;justify-content:center;gap:7px;flex-wrap:wrap;
@@ -483,8 +513,18 @@ input,select{font:inherit;color:inherit}
   max-height:93%;overflow-y:auto;animation:slideup .24s cubic-bezier(.2,.8,.3,1);
 }
 @keyframes slideup{from{transform:translateY(100%)}to{transform:translateY(0)}}
-.sheet-grip{width:46px;height:5px;border-radius:100px;background:var(--ink);
-  margin:5px auto 16px;opacity:.25}
+/* gagang: area sentuh lebar supaya gampang ditekan/ditarik,
+   garisnya sendiri tetap ramping */
+.sheet-grip{
+  display:block;width:100%;padding:10px 0 14px;margin:0 0 4px;
+  background:none;border:0;cursor:grab;touch-action:none;
+}
+.sheet-grip span{
+  display:block;width:46px;height:5px;border-radius:100px;
+  background:var(--ink);opacity:.25;margin:0 auto;transition:opacity .15s,width .15s;
+}
+.sheet-grip:active{cursor:grabbing}
+.sheet-grip:active span{opacity:.5;width:56px}
 
 .seg{display:flex;background:var(--surface-alt);border:var(--bd) solid var(--ink);
   border-radius:var(--r-sm);padding:4px;margin-bottom:18px;gap:4px}

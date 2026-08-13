@@ -20,7 +20,8 @@ const API_SHEET = 'https://sheets.googleapis.com/v4/spreadsheets';
    menambah kolom harus di BELAKANG, jangan menyisipkan di tengah,
    supaya spreadsheet lama tetap terbaca. */
 const SKEMA_SHEET = {
-  profil:    ['nama','email','tanggal_mulai','versi_skema'],
+  profil:    ['nama','email','tanggal_mulai','versi_skema',
+              'kunci_hash','kunci_garam','saldo_terkunci'],
   akun:      ['id','nama','bank_kode','jenis','is_default','urutan','aktif'],
   kantong:   ['id','nama','jenis','is_default','warna','catatan'],
   kategori:  ['id','nama','tipe','induk_id','ikon'],
@@ -28,13 +29,16 @@ const SKEMA_SHEET = {
   transaksi: ['id','timestamp','dibuat_pada','jenis','nominal',
               'akun_id','akun_tujuan_id','kantong_id','kantong_tujuan_id',
               'kategori_id','pihak_id','keterangan','bukti_url','bukti_thumb',
-              'reversal_dari']
+              'reversal_dari'],
+  pengingat: ['id','judul','arah','nominal','jadwal_tipe','jadwal_nilai',
+              'akun_id','kantong_id','kategori_id','aktif',
+              'terakhir_dipenuhi','ditunda_sampai']
 };
 
 /* Kolom yang harus kembali jadi boolean/number saat dibaca —
    Sheets mengembalikan semuanya sebagai string. */
-const KOLOM_BOOL   = new Set(['is_default','aktif']);
-const KOLOM_ANGKA  = new Set(['nominal','urutan','versi_skema']);
+const KOLOM_BOOL   = new Set(['is_default','aktif','saldo_terkunci']);
+const KOLOM_ANGKA  = new Set(['nominal','urutan','versi_skema','jadwal_nilai']);
 
 
 /* ══════════ SESI GOOGLE ══════════ */
@@ -250,7 +254,7 @@ const SheetsAdapter = {
       }
     });
 
-    return validasiSkema(db) ? db : null;
+    return validasiSkema(db) ? lengkapiSkema(db) : null;
   },
 
   /* ── tulis ── */

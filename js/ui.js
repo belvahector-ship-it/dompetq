@@ -255,6 +255,11 @@ const Modal = {
         inp = el('input', { type: m.tipe || 'text', placeholder: m.placeholder || '',
                             value: m.nilai || '', autocomplete:'off' });
         if (m.tipe === 'angka') { inp.type = 'text'; inp.inputMode = 'numeric'; pasangFormatAngka(inp); }
+        if (m.tipe === 'pin') {
+          inp.type = 'password'; inp.inputMode = 'numeric';
+          inp.maxLength = 8; inp.autocomplete = 'off';
+          inp.classList.add('isian-pin');
+        }
       }
       lbl.appendChild(inp);
       inputs[m.nama] = inp;
