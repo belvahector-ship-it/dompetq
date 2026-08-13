@@ -64,6 +64,8 @@ const GOOGLE = {
      baru (mis. domain kustom) harus didaftarkan di sana dulu,
      kalau tidak login akan ditolak dengan origin_mismatch. */
   originTerdaftar: [
+    'https://dompetq.my.id',
+    'https://www.dompetq.my.id',
     'https://belvahector-ship-it.github.io',
     'http://127.0.0.1:8765',
     'http://localhost:8765'

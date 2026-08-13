@@ -3,7 +3,9 @@
 Pencatat keuangan pribadi yang memisahkan **di mana uang berada** dari **milik siapa uang itu**.
 Konsep lengkap ada di [konsep.md](konsep.md).
 
-**Live:** https://belvahector-ship-it.github.io/dompetq/
+**Live:** https://dompetq.my.id — juga tetap dilayani di https://belvahector-ship-it.github.io/dompetq/
+
+Domain kustom diatur lewat berkas [CNAME](CNAME) di akar repo. Berkas itu bukan hiasan: ia yang memberi tahu GitHub Pages domain mana yang dilayani, dan kalau terhapus, situsnya kembali ke alamat `github.io` sementara `dompetq.my.id` berhenti bekerja. Semua path di `index.html` bersifat relatif, jadi aplikasi jalan baik di akar domain maupun di subfolder `/dompetq/`.
 
 Tampilan mengikuti bahasa desain *soft neo-brutalist* yang sama dengan arsip-gratis.my.id:
 border tebal 2,4px, bayangan keras `6px 6px 0`, radius 16px, Archivo + Manrope, palet amber/hijau/merah/biru.
@@ -220,7 +222,9 @@ Tetap rutin unduh cadangan JSON dari halaman **Laporan** — itu satu-satunya sa
 | API yang dipakai | Google Sheets API, Google Drive API — **keduanya harus Enable** |
 | Scope | `openid`, `email`, `profile`, `drive.file` |
 | OAuth client | `DompetQ Web`, tipe Web application |
-| Origin terdaftar | GitHub Pages, `127.0.0.1:8765`, `localhost:8765` |
+| Origin terdaftar | `dompetq.my.id`, `www.dompetq.my.id`, GitHub Pages, `127.0.0.1:8765`, `localhost:8765` |
+
+Origin yang sama dicatat ulang di `originTerdaftar` ([js/config.js](js/config.js)) — hanya sebagai catatan, tidak dipakai logika apa pun. Yang menentukan tetap daftar di Google Cloud; kalau keduanya berbeda, yang di kode itulah yang menyesatkan.
 
 Client ID ada di [js/config.js](js/config.js) — memang publik, dan aman berada di repo ini.
 Client secret **tidak dipakai** oleh aplikasi front-end statis dan tidak boleh masuk repo.
