@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Hanya folder ekspor di cache yang dibuka, bukan seluruh cache. -->
+    <cache-path name="ekspor" path="ekspor/" />
+</paths>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">DompetQ</string>
+    <string name="title_activity_main">DompetQ</string>
+    <string name="package_name">id.my.ibstudio.dompetq</string>
+    <string name="custom_url_scheme">id.my.ibstudio.dompetq</string>
+</resources>

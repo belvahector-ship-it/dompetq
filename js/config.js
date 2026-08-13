@@ -22,17 +22,40 @@ const GOOGLE = {
      Pemilik: belvahector69@gmail.com */
   clientId: '126487346679-vchjia1p4squhh1vjimvk2sd8n4atvje.apps.googleusercontent.com',
 
-  /* Scope paling sempit yang memungkinkan pola satu
-     spreadsheet per pengguna di Drive-nya sendiri.
-     drive.file hanya memberi akses ke file yang DIBUAT
-     aplikasi ini — bukan seluruh Drive. (konsep.md §9.2) */
+  /* SATU scope saja untuk data: drive.file.
+
+     Ia memberi akses penuh — baca dan tulis, lewat Drive API maupun
+     Sheets API — tapi HANYA ke berkas yang dibuat aplikasi ini
+     sendiri. Berkas lain di Drive pengguna tidak pernah terlihat.
+     (konsep.md §9.2)
+
+     `spreadsheets` sengaja TIDAK dipakai meski terdengar lebih tepat.
+     Scope itu memberi akses ke SELURUH spreadsheet milik pengguna —
+     jauh lebih luas daripada yang dibutuhkan aplikasi ini — dan
+     Google menggolongkannya sensitive: memakainya berarti aplikasi
+     tidak bisa keluar dari mode Testing tanpa lolos verifikasi
+     keamanan. Dengan drive.file saja, aplikasi boleh dipublikasikan
+     dan siapa pun bisa masuk. */
   scopes: [
     'openid',
     'email',
     'profile',
-    'https://www.googleapis.com/auth/drive.file',
-    'https://www.googleapis.com/auth/spreadsheets'
+    'https://www.googleapis.com/auth/drive.file'
   ].join(' '),
+
+  /* Izin yang menentukan aplikasi bisa bekerja atau tidak. Google
+     memberi centang TERPISAH untuk tiap izin dan kotaknya mulai
+     kosong: pengguna bisa menekan "Lanjutkan" tanpa mencentangnya.
+     Login tetap berhasil dan email tetap muncul — tapi setiap
+     tulisan ke spreadsheet ditolak 403. Karena itu diperiksa ulang
+     tepat sesudah login. */
+  scopeWajib: [
+    'https://www.googleapis.com/auth/drive.file'
+  ],
+
+  /* Dipakai pesan galat supaya pengguna tahu API mana yang harus
+     diaktifkan, tanpa harus menebak nama proyeknya. */
+  projectId: 'dompetq-belva-2026',
 
   /* Nama file spreadsheet yang dicari/dibuat di Drive pengguna */
   namaBerkas: 'dompetq-data',

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Warna dan tipografi sesungguhnya diatur Compose (ui/Tema.kt).
+         Tema XML hanya dipakai sebelum Compose terpasang, jadi latarnya
+         disamakan dengan krem aplikasi supaya tidak ada kedipan putih. -->
+    <style name="Theme.DompetQ" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/krem</item>
+        <item name="android:statusBarColor">@color/krem</item>
+        <item name="android:navigationBarColor">@color/krem</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

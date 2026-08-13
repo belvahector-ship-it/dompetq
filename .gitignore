@@ -3,9 +3,31 @@
 dompetq-transaksi-*.csv
 mutasi-*.csv
 
+# kunci penandatanganan APK — kehilangan berkas ini berarti
+# tidak bisa lagi merilis pembaruan untuk aplikasi yang sama
+*.keystore
+*.jks
+android/keystore.properties
+native/keystore.properties
+
 # perkakas
 .DS_Store
 Thumbs.db
 node_modules/
 .vscode/
 .idea/
+
+# hasil rakitan — semuanya bisa dibuat ulang dari sumber
+/www/
+/assets/
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/app/src/main/assets/public/
+android/capacitor-cordova-android-plugins/
+native/build/
+native/app/build/
+native/.gradle/
+native/local.properties
+rilis/

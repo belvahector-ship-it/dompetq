@@ -1,0 +1,22 @@
+{
+  "name": "dompetq",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pencatat keuangan pribadi yang memisahkan di mana uang berada dari milik siapa uang itu.",
+  "scripts": {
+    "siapkan": "node tools/siapkan-www.mjs",
+    "sinkron": "npm run siapkan && npx cap sync android",
+    "apk:debug": "npm run sinkron && node tools/bangun-apk.mjs debug",
+    "apk:rilis": "npm run sinkron && node tools/bangun-apk.mjs release"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/filesystem": "^7.0.0",
+    "@capacitor/share": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0"
+  }
+}

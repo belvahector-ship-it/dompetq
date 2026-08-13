@@ -25,6 +25,63 @@ function masukApp() {
   /* Diperiksa setelah layar siap, bukan di tengah pemuatan — pop-up
      yang muncul sebelum aplikasi terlihat membingungkan. */
   setTimeout(periksaPengingat, 700);
+  pulihkanSambungan();
+}
+
+/* Menyambung kembali ke Google diam-diam saat aplikasi dibuka.
+   Berjalan di latar dan tidak pernah menahan tampilnya layar —
+   kalau izinnya sudah habis, tidak ada yang terlihat berubah. */
+async function pulihkanSambungan() {
+  let hasil;
+  try { hasil = await Store.pulihkanSheets(); }
+  catch (e) { return; }
+
+  if (hasil.cara === 'tidak') return;
+
+  if (hasil.cara === 'siap' || hasil.cara === 'galat') {
+    if (layarAktif === 'profil') renderSheets();
+    return;
+  }
+
+  if (hasil.cara === 'unduh') {
+    await Store.terapkanSinkron('unduh', hasil.jauh);
+    segarkan();
+    toast('Data terbaru diambil dari Google Sheets');
+    return;
+  }
+
+  /* Perangkat ini dan perangkat lain sama-sama mencatat sejak
+     terakhir tersambung. Aplikasi tidak boleh memilih sendiri. */
+  tanyaBentrok(hasil.lokal, hasil.jauh);
+}
+
+/* Dipakai dua kali: saat menyambungkan manual, dan saat pemulihan
+   otomatis menemukan kedua sisi sama-sama maju. */
+function tanyaBentrok(lokal, jauh) {
+  const pakai = async (arah) => {
+    toast('Menyinkronkan…');
+    const ok = await Store.terapkanSinkron(arah, jauh);
+    renderProfil();
+    toast(ok ? 'Tersambung ke Google Sheets' : 'Tersambung, tapi tulis pertama gagal');
+    segarkan();
+  };
+
+  Modal.buka({
+    judul: 'Dua-duanya sudah berisi',
+    isi: el('div', null, [
+      el('p', { class:'muted', style:'margin-top:0' },
+        `Di perangkat ini ada ${lokal.transaksi.length} transaksi, ` +
+        `di Google Sheets ada ${jauh.transaksi.length}. Mau diapakan?`),
+      el('p', { class:'fineprint', style:'margin:0' },
+        'Menyatukan adalah pilihan paling aman: transaksi punya ID unik, ' +
+        'jadi tidak ada yang dobel dan tidak ada yang hilang.')
+    ]),
+    aksi: [
+      { label:'Batal' },
+      { label:'Pakai Sheets', aksi: () => pakai('unduh') },
+      { label:'Satukan', gaya:'btn-primary', aksi: () => pakai('satukan') }
+    ]
+  });
 }
 
 /* ═══════════ NAVIGASI ═══════════ */
@@ -1292,11 +1349,37 @@ function unduhCsvKantong(k) {
 }
 
 function unduh(nama, isi, mime) {
+  if (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) {
+    unduhNative(nama, isi, mime);
+    return;
+  }
   const blob = new Blob([isi], { type: mime + ';charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = el('a', { href:url, download:nama });
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
+}
+
+/* Di dalam APK, <a download> tidak melakukan apa pun — WebView
+   Android mengabaikannya diam-diam. Berkas ditulis ke cache
+   aplikasi lalu diserahkan ke lembar berbagi bawaan sistem,
+   sehingga pengguna tetap bisa menyimpannya ke Files/Drive
+   atau mengirimnya ke mana pun. */
+async function unduhNative(nama, isi, mime) {
+  const { Filesystem, Share } = Capacitor.Plugins;
+  try {
+    const { uri } = await Filesystem.writeFile({
+      path: nama,
+      data: isi,
+      directory: 'CACHE',
+      encoding: 'utf8'
+    });
+    await Share.share({ title: nama, url: uri, dialogTitle: 'Simpan ' + nama });
+  } catch (e) {
+    /* Pengguna menutup lembar berbagi — bukan kegagalan. */
+    if (/cancel/i.test(String((e && e.message) || e))) return;
+    toast('Gagal menyiapkan berkas');
+  }
 }
 
 /* ══════════════════════════════════════════════
@@ -1395,6 +1478,14 @@ function renderSheets() {
       class:'btn btn-primary btn-block', style:'margin-top:10px',
       onclick: sambungkanGoogle
     }, 'Sambungkan Google Sheets'));
+    w.appendChild(el('button', {
+      class:'btn btn-outline btn-block',
+      onclick: periksaSambungan
+    }, 'Periksa sambungan'));
+    w.appendChild(el('button', {
+      class:'btn btn-outline btn-block',
+      onclick: mintaIzinUlang
+    }, 'Minta izin ulang'));
     w.appendChild(el('p', { class:'fineprint' },
       'Spreadsheet dibuat di Google Drive milikmu sendiri. Pembuat aplikasi ini ' +
       'tidak bisa membukanya. Kamu bisa mencabut aksesnya kapan pun.'));
@@ -1402,7 +1493,7 @@ function renderSheets() {
   }
 
   const status = s.sedang ? 'Menyimpan…'
-               : s.galat  ? s.galat
+               : s.galat  ? 'Gagal menyimpan'
                : s.terakhir ? 'Tersimpan ' + tglRelatif(s.terakhir).toLowerCase() +
                               ', ' + jamSingkat(s.terakhir)
                : 'Tersambung';
@@ -1414,6 +1505,17 @@ function renderSheets() {
       el('small', null, status)
     ])
   ]));
+
+  /* Sebabnya ditulis penuh di bawah kartu, bukan diringkas ke dalam
+     baris status. Pesan seperti "Google Sheets API belum diaktifkan"
+     memang panjang — tapi persis kalimat itulah yang membuat orang
+     tahu harus berbuat apa. */
+  if (s.galat) {
+    w.appendChild(el('p', {
+      class:'fineprint',
+      style:'white-space:pre-line;color:var(--red);margin-top:8px'
+    }, s.galat));
+  }
 
   const tautan = SheetsAdapter.tautan();
   if (tautan) {
@@ -1432,6 +1534,20 @@ function renderSheets() {
   }, 'Simpan sekarang'));
 
   w.appendChild(el('button', {
+    class:'btn btn-outline btn-block',
+    onclick: periksaSambungan
+  }, 'Periksa sambungan'));
+
+  /* Hanya ditawarkan kalau ada yang gagal — kalau sedang sehat,
+     mencabut izin justru mematahkan yang sudah jalan. */
+  if (s.galat) {
+    w.appendChild(el('button', {
+      class:'btn btn-outline btn-block',
+      onclick: mintaIzinUlang
+    }, 'Minta izin ulang'));
+  }
+
+  w.appendChild(el('button', {
     class:'btn btn-danger-ghost btn-block',
     onclick: () => Modal.konfirmasi({
       judul:'Putuskan sambungan?',
@@ -1447,6 +1563,90 @@ function jamSingkat(iso) {
   return pad2(d.getHours()) + '.' + pad2(d.getMinutes());
 }
 
+/* Google mengingat persetujuan yang sudah pernah diberikan. Kalau dulu
+   ada kotak izin yang terlewat, permintaan berikutnya dijawab diam-diam
+   dengan izin lama yang kurang itu — layar centangnya tidak muncul lagi,
+   dan macetnya terasa tidak bisa diperbaiki dari dalam aplikasi.
+
+   Mencabut dulu memaksa Google bertanya dari awal. */
+async function mintaIzinUlang() {
+  try {
+    toast('Membuka layar izin Google…');
+    await Google.masukUlang();
+  } catch (e) {
+    Modal.buka({
+      judul: 'Gagal meminta izin',
+      isi: el('p', { class:'muted', style:'margin:0;white-space:pre-line' }, e.message),
+      aksi: [{ label:'Tutup', gaya:'btn-primary' }]
+    });
+    return;
+  }
+  await sambungkanGoogle();
+}
+
+/* Menjalankan rantai sambungan langkah demi langkah dan menunjukkan
+   persis di mana putusnya. Dipasang di dua tempat — sebelum dan
+   sesudah tersambung — karena keduanya bisa gagal dengan sebab yang
+   sama sekali berbeda. */
+async function periksaSambungan() {
+  const isi = el('div');
+  isi.appendChild(el('p', { class:'muted', style:'margin-top:0' }, 'Memeriksa…'));
+  Modal.buka({ judul:'Periksa sambungan', isi, aksi:[{ label:'Tutup' }] });
+
+  let hasil;
+  try {
+    hasil = await SheetsAdapter.diagnosa();
+  } catch (e) {
+    hasil = [{ nama:'Pemeriksaan', ok:false, pesan:e.message }];
+  }
+
+  kosong(isi);
+
+  const TANDA = { true:'✓', false:'✕', null:'–' };
+  hasil.forEach(h => {
+    const warna = h.ok === true  ? 'var(--green)'
+                : h.ok === false ? 'var(--red)'
+                : 'var(--ink-3)';
+    isi.appendChild(el('div', { class:'mg' }, [
+      el('div', {
+        style:'flex:none;width:20px;font-weight:800;color:' + warna
+      }, TANDA[String(h.ok)]),
+      el('div', { class:'mg-body' }, [
+        el('b', null, h.nama),
+        el('small', { style:'white-space:pre-line;font-family:inherit' }, h.pesan),
+        h.mentah ? el('small', {
+          style:'display:block;color:var(--ink-3);margin-top:4px'
+        }, h.mentah) : null
+      ])
+    ]));
+  });
+
+  const gagal = hasil.find(h => h.ok === false);
+  isi.appendChild(el('p', { class:'fineprint' }, gagal
+    ? 'Langkah bertanda ✕ itulah yang perlu dibereskan. Langkah sesudahnya ' +
+      'dilewati karena pasti ikut gagal.'
+    : 'Semua langkah berhasil. Sambungan ke Google Sheets sehat.'));
+
+  /* Laporan yang bisa disalin — supaya sebab mentahnya bisa dikirim
+     atau dicari, tanpa harus membuka console browser di HP. */
+  const laporan = hasil.map(h =>
+    TANDA[String(h.ok)] + ' ' + h.nama + ' — ' + h.pesan +
+    (h.mentah ? ' [' + h.mentah + ']' : '')).join('\n');
+
+  Modal.buka({
+    judul: 'Periksa sambungan',
+    isi,
+    aksi: [
+      { label:'Salin laporan', tutup:false, aksi: () => {
+          navigator.clipboard.writeText(laporan)
+            .then(() => toast('Laporan disalin'))
+            .catch(() => toast('Gagal menyalin'));
+        } },
+      { label:'Tutup', gaya:'btn-primary' }
+    ]
+  });
+}
+
 async function sambungkanGoogle() {
   toast('Membuka login Google…');
   let putusan;
@@ -1455,8 +1655,11 @@ async function sambungkanGoogle() {
   } catch (e) {
     Modal.buka({
       judul: 'Gagal menyambungkan',
-      isi: el('p', { class:'muted', style:'margin:0' }, e.message),
-      aksi: [{ label:'Tutup', gaya:'btn-primary' }]
+      isi: el('p', { class:'muted', style:'margin:0;white-space:pre-line' }, e.message),
+      aksi: [
+        { label:'Periksa sambungan', tutup:false, aksi: periksaSambungan },
+        { label:'Tutup', gaya:'btn-primary' }
+      ]
     });
     return;
   }
@@ -1476,23 +1679,7 @@ async function sambungkanGoogle() {
 
   /* Dua-duanya berisi transaksi. Ini keputusan pengguna, bukan
      keputusan aplikasi — salah pilih berarti kehilangan catatan uang. */
-  const jauh = putusan.jauh, lokal = putusan.lokal;
-  Modal.buka({
-    judul: 'Dua-duanya sudah berisi',
-    isi: el('div', null, [
-      el('p', { class:'muted', style:'margin-top:0' },
-        `Di perangkat ini ada ${lokal.transaksi.length} transaksi, ` +
-        `di Google Sheets ada ${jauh.transaksi.length}. Mau diapakan?`),
-      el('p', { class:'fineprint', style:'margin:0' },
-        'Menyatukan adalah pilihan paling aman: transaksi punya ID unik, ' +
-        'jadi tidak ada yang dobel dan tidak ada yang hilang.')
-    ]),
-    aksi: [
-      { label:'Batal' },
-      { label:'Pakai Sheets', aksi: () => pakai('unduh', jauh) },
-      { label:'Satukan', gaya:'btn-primary', aksi: () => pakai('satukan', jauh) }
-    ]
-  });
+  tanyaBentrok(putusan.lokal, putusan.jauh);
 }
 
 function renderProfil() {

@@ -87,6 +87,14 @@ function lengkapiSkema(db) {
   return db;
 }
 
+/* Sebab kegagalan tulis yang sebenarnya, kalau SheetsAdapter
+   sempat menangkapnya. Kalimat umum hanya dipakai sebagai
+   jaring pengaman terakhir. */
+function pesanGagalSheets() {
+  const e = (typeof SheetsAdapter !== 'undefined') && SheetsAdapter.galatTerakhir;
+  return (e && e.message) || 'Gagal menulis ke Google Sheets.';
+}
+
 /* ── Store: satu-satunya pintu ke data ───────── */
 const Store = {
   db: null,
@@ -163,7 +171,7 @@ const Store = {
     this.cermin.simpan(this.db).then(ok => {
       this.sinkron.sedang = false;
       if (ok) { this.sinkron.terakhir = new Date().toISOString(); this.sinkron.galat = null; }
-      else    { this.sinkron.galat = 'Gagal menulis ke Google Sheets.'; }
+      else    { this.sinkron.galat = pesanGagalSheets(); }
       this._kabarkanSinkron();
     }).catch(e => {
       this.sinkron.sedang = false;
@@ -198,6 +206,46 @@ const Store = {
     return putusan;
   },
 
+  /* Dipanggil sekali saat aplikasi dibuka. Menyambung kembali tanpa
+     mengganggu kalau izin Google masih berlaku.
+
+     Tanpa ini, sambungan Sheets hanya bertahan selama satu kali buka:
+     token disimpan di memori saja, jadi setiap muat ulang halaman
+     mengembalikan aplikasi ke keadaan "belum tersambung". Pengguna
+     yang mengira datanya tersalin ke Drive sebenarnya hanya menyalin
+     pada sesi ketika mereka ingat menekan tombolnya.
+
+     Mengembalikan: 'tidak' (tidak ada sesi / izin habis),
+     'siap' (tersambung), 'unduh', 'bentrok', atau 'galat'. */
+  async pulihkanSheets() {
+    if (!(await Google.pulihkan())) return { cara:'tidak' };
+
+    let jauh = null;
+    try {
+      jauh = await SheetsAdapter.muat();
+    } catch (e) {
+      /* Sambungan ada tapi berkasnya bermasalah. Cermin sengaja TIDAK
+         dipasang: menulis ke berkas yang tidak terbaca berisiko
+         menimpa isi yang sebenarnya masih ada di sana. */
+      this.sinkron.galat = e.message;
+      this._kabarkanSinkron();
+      return { cara:'galat', pesan: e.message };
+    }
+
+    const arah = Sinkron.bandingkan(this.db, jauh);
+    if (arah === 'bentrok') return { cara:'bentrok', jauh, lokal: this.db };
+
+    if (arah === 'unduh') return { cara:'unduh', jauh };
+
+    /* Aman disambung diam-diam: Drive tidak memuat apa pun yang belum
+       ada di perangkat ini. */
+    this.cermin = SheetsAdapter;
+    this.sinkron.aktif = true;
+    this.sinkron.galat = null;
+    this._kabarkanSinkron();
+    return { cara:'siap' };
+  },
+
   /* Menerapkan keputusan sinkron. arah:
        'unggah'  — data perangkat menang, ditulis ke Sheets
        'unduh'   — data Sheets menang, menggantikan yang di perangkat
@@ -217,7 +265,7 @@ const Store = {
     const ok = await SheetsAdapter.simpan(this.db);
     this.sinkron.sedang = false;
     if (ok) this.sinkron.terakhir = new Date().toISOString();
-    else    this.sinkron.galat = 'Gagal menulis ke Google Sheets.';
+    else    this.sinkron.galat = pesanGagalSheets();
     this._kabarkanSinkron();
     return ok;
   },

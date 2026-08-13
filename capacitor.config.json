@@ -1,0 +1,11 @@
+{
+  "appId": "id.my.ibstudio.dompetq",
+  "appName": "DompetQ",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#FFFDF5"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
