@@ -4,6 +4,8 @@
 
 /* ═══════════ BOOT ═══════════ */
 (async function boot() {
+  pasangSaranBayangan();
+  pasangFooter();
   const ada = await Store.init();
   if (ada) { masukApp(); }
   else     { OB.mulai(); }
@@ -46,6 +48,40 @@ function pasangNav() {
 
 function segarkan() {
   navTo(layarAktif);
+}
+
+/* Footer kredit — kecil, satu baris, di dasar layar yang bisa digulir.
+   Disisipkan lewat JS supaya versinya cukup diubah di satu tempat. */
+function pasangFooter() {
+  const isi = () => el('footer', { class:'kredit' }, [
+    el('span', null, 'DompetQ'),
+    el('span', { class:'kredit-versi' }, TAHAP_APP + ' v' + VERSI_APP),
+    el('span', { class:'kredit-pisah' }, '·'),
+    el('a', { href: KREDIT_URL, target:'_blank', rel:'noopener' }, KREDIT_APP)
+  ]);
+
+  $$('.pad-bottom').forEach(p => p.parentElement.insertBefore(isi(), p));
+  const ob = $('.ob-step[data-step="0"]');
+  if (ob) ob.appendChild(isi());
+}
+
+/* Saran isian selalu berupa BAYANGAN (placeholder), tidak pernah teks
+   sungguhan yang harus dihapus dulu. Dan begitu kolom disentuh,
+   bayangannya menyingkir supaya tidak mengganggu saat mengetik. */
+function pasangSaranBayangan() {
+  document.addEventListener('focusin', e => {
+    const t = e.target;
+    if (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA') return;
+    if (!t.placeholder) return;
+    t.dataset.saran = t.placeholder;
+    t.placeholder = '';
+  });
+  document.addEventListener('focusout', e => {
+    const t = e.target;
+    if (!t.dataset || !t.dataset.saran) return;
+    t.placeholder = t.dataset.saran;   // muncul lagi kalau ditinggalkan
+    delete t.dataset.saran;
+  });
 }
 
 /* Dua jaring pengaman penyimpanan. */
@@ -93,6 +129,8 @@ const OB = {
   punyaTitipan: null,  // true/false
   namaPribadi: 'Uang Pribadi',
   titipan: [],         // {key,nama}
+  titipanNominal: {},  // {kantongKey: total} — cara utama, tanpa memilah tempat
+  modeRinci: false,    // true kalau pengguna memilih mengatur sendiri per tempat
   matriks: {},         // matriks[akunKey][kantongKey] = nominal
   katKeluar: new Set(),
   katMasuk: new Set(),
@@ -136,7 +174,7 @@ const OB = {
     $('.ob-wrap').scrollTop = 0;
 
     if (s === 4) this.renderSaldo();
-    if (s === 5) this.renderMatriks();
+    if (s === 5) this.renderTitipan();
   },
 
   maju() {
@@ -160,8 +198,12 @@ const OB = {
       if (!this.punyaTitipan) { this.tampil(6); return; }
     }
     if (s === 5) {
-      const salah = this.cekMatriks();
-      if (salah) { toast('Masih ada yang belum pas'); return; }
+      if (this.modeRinci) {
+        if (this.cekMatriks()) { toast('Masih ada rincian yang belum pas'); return; }
+      } else {
+        const t = this.totalTitipan(), f = this.totalFisik();
+        if (t > f) { toast('Dana titipan melebihi total uang yang ada'); return; }
+      }
     }
     if (s === 6) { this.selesai(); return; }
 
@@ -175,35 +217,13 @@ const OB = {
 
   /* ── akun ── */
   dialogAkun() {
-    const opsi = SEED_AKUN.map(s => ({
-      id: s.kode, nama: s.nama, ikon: s.ini,
-      ket: s.jenis === 'bank' ? 'Bank' : s.jenis === 'ewallet' ? 'E-wallet'
-         : s.jenis === 'tunai' ? 'Uang fisik' : 'Tulis sendiri'
-    }));
-
-    Modal.pilih({
-      judul: 'Pilih jenis',
-      opsi,
-      onPilih: (o) => {
-        const seed = SEED_AKUN.find(s => s.kode === o.id);
-        Modal.form({
-          judul: 'Tambah ' + seed.nama,
-          medan: [{
-            nama:'nama', label:'Nama tampilan',
-            placeholder: seed.kode === 'lainnya' ? 'mis. Koperasi Sekolah' : seed.nama,
-            nilai: seed.kode === 'lainnya' ? '' : seed.nama
-          }],
-          onSimpan: (v) => {
-            if (!v.nama) return 'Nama tidak boleh kosong.';
-            this.akun.push({
-              key: uid('t'), nama: v.nama,
-              bank_kode: seed.kode === 'lainnya' ? '' : seed.kode,
-              jenis: seed.jenis, saldo: 0
-            });
-            this.renderAkun();
-          }
-        });
-      }
+    dialogPilihBank(({ seed, nama }) => {
+      this.akun.push({
+        key: uid('t'), nama,
+        bank_kode: seed.kode === 'lainnya' ? '' : seed.kode,
+        jenis: seed.jenis, saldo: 0
+      });
+      this.renderAkun();
     });
   },
 
@@ -279,7 +299,135 @@ const OB = {
     $('#obTotalFisik').textContent = rp(t);
   },
 
-  /* ── matriks akun × sumber dana ── */
+  /* ── dana titipan: total dulu, pemilahan belakangan ──
+     Uang titipan sering tersebar di beberapa tempat dan pemegangnya
+     jarang hafal pecahannya. Memaksa mengisi matriks di sini membuat
+     orang menebak — dan tebakan di aplikasi keuangan lebih buruk
+     daripada tidak tahu. Jadi: minta totalnya, sisanya dihitung. */
+
+  totalFisik() {
+    return this.akun.reduce((s, a) => s + (a.saldo || 0), 0);
+  },
+
+  totalTitipan() {
+    return this.titipan.reduce((s, t) => s + (this.titipanNominal[t.key] || 0), 0);
+  },
+
+  renderTitipan() {
+    const w = kosong($('#obTitipanNominal'));
+
+    this.titipan.forEach((t, i) => {
+      const inp = el('input', { type:'text', inputmode:'numeric', placeholder:'0' });
+      pasangFormatAngka(inp);
+      tulisAngka(inp, this.titipanNominal[t.key] || 0);
+      inp.addEventListener('input', () => {
+        this.titipanNominal[t.key] = bacaAngka(inp);
+        this.hitungTitipan();
+        if (this.modeRinci) this.renderMatriks();
+      });
+
+      const warna = WARNA_KANTONG[(i + 1) % WARNA_KANTONG.length];
+      w.appendChild(el('div', { class:'saldo-row' }, [
+        el('label', null, [
+          el('span', { class:'kt-dot', style:'background:' + warna + ';display:inline-block;margin-right:7px;vertical-align:-1px' }),
+          t.nama
+        ]),
+        el('div', { class:'saldo-in' }, [ el('span', null, 'Rp'), inp ])
+      ]));
+    });
+
+    $('#obRinciToggle').onclick = () => {
+      this.modeRinci = !this.modeRinci;
+      $('#obRinciWrap').hidden = !this.modeRinci;
+      $('#obRinciToggle').textContent = this.modeRinci
+        ? 'Cukup pakai total saja' : 'Atur sendiri per tempat';
+      if (this.modeRinci) this.renderMatriks();
+      this.hitungTitipan();
+    };
+
+    this.hitungTitipan();
+  },
+
+  /* Kartu hitung: total semua tempat − titipan = uang pribadi.
+     Inilah pemeriksaan "apakah pas" yang menggantikan matriks. */
+  hitungTitipan() {
+    const fisik = this.totalFisik();
+    const titip = this.modeRinci ? this.titipanRinci() : this.totalTitipan();
+    const pribadi = fisik - titip;
+    const lebih = pribadi < 0;
+
+    const baris = (label, nilai, kelas) => el('div', { class:'hitung-baris ' + (kelas || '') }, [
+      el('span', null, label),
+      el('b', null, rp(nilai))
+    ]);
+
+    const w = kosong($('#obHitung'));
+    w.className = 'hitung' + (lebih ? ' bahaya' : '');
+    w.appendChild(baris('Total semua tempat', fisik));
+    w.appendChild(baris('Dana titipan', -titip));
+    w.appendChild(el('div', { class:'hitung-garis' }));
+    w.appendChild(baris(lebih ? 'Kelebihan' : 'Uang kamu sendiri', pribadi, 'hasil'));
+
+    /* teks dibungkus satu span — kalau tidak, <b> di dalamnya ikut
+       jadi item flex dan terlempar ke kolom sendiri */
+    w.appendChild(el('p', { class:'hitung-pesan', html:
+      svgIkon(lebih ? 'peringatan' : 'cek', 15) + '<span>' + (lebih
+        ? 'Dana titipan melebihi total uang yang ada. Cek lagi angkanya.'
+        : 'Sudah pas. Angka inilah yang muncul sebagai <b>uang saya bersih</b>.') + '</span>'
+    }));
+  },
+
+  /* jumlah titipan versi rinci, dibaca dari matriks */
+  titipanRinci() {
+    let n = 0;
+    this.akun.forEach(a => {
+      const sel = this.matriks[a.key] || {};
+      Object.keys(sel).forEach(k => { if (k !== '_pribadi') n += sel[k] || 0; });
+    });
+    return n;
+  },
+
+  /* Menempatkan tiap dana titipan ke tempat dengan saldo terbesar
+     yang masih sanggup menampungnya, UTUH — tidak dipecah kecuali
+     memang tidak muat.
+
+     Aplikasi butuh matriks akun × sumber dana secara internal, tapi
+     pengguna tidak perlu mengisinya. Pembagian proporsional sempat
+     dicoba dan hasilnya buruk: "Kas RT Rp 412.011 di BCA" adalah
+     angka yang tidak pernah diucapkan siapa pun, dan pengguna jadi
+     melihat catatan yang terasa mengada-ada. Penempatan utuh
+     menghasilkan angka yang bisa dibaca dan mudah dikoreksi lewat
+     transaksi pindah sumber dana kalau ternyata meleset. */
+  alokasiOtomatis() {
+    const sisa = {};
+    const hasil = {};
+    this.akun.forEach(a => { sisa[a.key] = a.saldo || 0; hasil[a.key] = {}; });
+
+    this.titipan.forEach(t => {
+      let perlu = this.titipanNominal[t.key] || 0;
+      if (perlu <= 0) return;
+
+      /* tempat terbesar lebih dulu — paling mungkin memang di situ */
+      const urut = this.akun.slice().sort((x, y) => sisa[y.key] - sisa[x.key]);
+      for (const a of urut) {
+        if (perlu <= 0) break;
+        const ambil = Math.min(perlu, sisa[a.key]);
+        if (ambil <= 0) continue;
+        hasil[a.key][t.key] = (hasil[a.key][t.key] || 0) + ambil;
+        sisa[a.key] -= ambil;
+        perlu -= ambil;
+      }
+    });
+
+    /* sisanya milik pengguna sendiri */
+    this.akun.forEach(a => {
+      if (sisa[a.key] > 0) hasil[a.key]['_pribadi'] = sisa[a.key];
+    });
+
+    return hasil;
+  },
+
+  /* ── matriks akun × sumber dana (mode rinci, opsional) ── */
   daftarKantong() {
     return [{ key:'_pribadi', nama: this.namaPribadi || 'Uang Pribadi', jenis:'milik_sendiri' }]
       .concat(this.titipan.map(t => ({ key:t.key, nama:t.nama, jenis:'titipan' })));
@@ -289,11 +437,14 @@ const OB = {
     const w = kosong($('#obMatriks'));
     const kts = this.daftarKantong();
 
+    /* Mulai dari hasil pembagian otomatis, bukan dari nol — pengguna
+       tinggal menggeser angka yang sudah mendekati benar. */
+    const awal = this.alokasiOtomatis();
+
     this.akun.forEach(a => {
-      if (!this.matriks[a.key]) this.matriks[a.key] = {};
-      // pertama kali: seluruh saldo masuk ke pribadi
-      const belumDiisi = Object.keys(this.matriks[a.key]).length === 0;
-      if (belumDiisi) this.matriks[a.key]['_pribadi'] = a.saldo || 0;
+      if (!this.matriks[a.key] || !Object.keys(this.matriks[a.key]).length) {
+        this.matriks[a.key] = Object.assign({}, awal[a.key] || {});
+      }
 
       const card = el('div', { class:'mx-card', 'data-akun': a.key });
       card.appendChild(el('div', { class:'mx-head' }, [
@@ -339,6 +490,7 @@ const OB = {
       foot.className = 'mx-foot bad'; foot.textContent = 'Lebih ' + rp(-selisih);
       card.classList.add('bad');
     }
+    if (this.modeRinci) this.hitungTitipan();
   },
 
   cekMatriks() {
@@ -398,9 +550,15 @@ const OB = {
     const kat = Store.tambahKategori({ nama:'Saldo Awal', tipe:'pemasukan' });
     const waktu = new Date().toISOString();
 
+    /* Mode rinci pakai isian pengguna; mode biasa pakai pembagian
+       proporsional dari total yang diisi di langkah 5. */
+    const sebaran = this.punyaTitipan
+      ? (this.modeRinci ? this.matriks : this.alokasiOtomatis())
+      : {};
+
     this.akun.forEach(a => {
       if (this.punyaTitipan) {
-        const sel = this.matriks[a.key] || {};
+        const sel = sebaran[a.key] || {};
         Object.keys(sel).forEach(kKey => {
           const n = sel[kKey] || 0;
           if (n === 0) return;
@@ -467,6 +625,11 @@ function renderDashboard() {
     ]));
   });
 
+  /* ikon judul bagian */
+  judulBagian($('#stAkun'), 'dompet', 'Rekening & dompet');
+  judulBagian($('#stKantong'), 'lapis', 'Sumber dana');
+  judulBagian($('#stTerakhir'), 'jam', 'Terakhir dicatat');
+
   /* akun */
   const wa = kosong($('#dashAkun'));
   db.akun.filter(a => a.aktif).forEach(a => {
@@ -497,7 +660,7 @@ function renderDashboard() {
   const kini = new Date();
   const lalu = new Date(kini.getTime() - 30 * 864e5);
   const pk = Calc.perKategori(db, lalu, kini, 'keluar');
-  $('#dashTotalKeluar').textContent = pk.total ? rp(pk.total) : '';
+  judulBagian($('#stGrafik'), 'grafik', 'Pengeluaran 30 hari', pk.total ? rp(pk.total) : '');
   renderBars($('#dashBars'), pk, 'Belum ada pengeluaran dalam 30 hari terakhir.');
 
   /* transaksi terakhir */
@@ -505,10 +668,21 @@ function renderDashboard() {
   const akhir = db.transaksi.slice().sort((a, b) =>
     new Date(b.dibuat_pada) - new Date(a.dibuat_pada)).slice(0, 5);
   if (!akhir.length) {
-    wt.appendChild(el('p', { class:'empty' }, 'Belum ada transaksi.\nTekan tombol + untuk mencatat.'));
+    wt.appendChild(kartuKosong('Belum ada transaksi',
+      'Tekan tombol + di bawah untuk mencatat yang pertama.'));
   } else {
     akhir.forEach(t => wt.appendChild(barisTx(t)));
   }
+}
+
+/* Keadaan kosong dengan maskot — layar kosong yang cuma berisi teks
+   abu-abu terasa seperti aplikasi rusak, bukan aplikasi baru. */
+function kartuKosong(judul, pesan) {
+  return el('div', { class:'kosong-kartu' }, [
+    el('img', { src:'img/maskot.png', alt:'', class:'kosong-maskot' }),
+    el('b', null, judul),
+    el('small', null, pesan)
+  ]);
 }
 
 function renderBars(wrap, pk, kosongPesan) {
@@ -827,35 +1001,65 @@ function finalTx(calon) {
   toast('Tercatat · ' + rp(calon.nominal));
 }
 
-function dialogTambahAkun(cb) {
+/* Pemilih bank/e-wallet dipakai bersama oleh onboarding dan halaman Profil.
+
+   Setelah bank dipilih, namanya TERKUNCI — pengguna tidak sedang
+   mengedit "BCA", ia sedang menambahkan rekening BCA miliknya. Yang
+   bisa diisi hanya judul opsional untuk membedakan kalau punya lebih
+   dari satu rekening di bank yang sama. */
+function dialogPilihBank(onSelesai, opsiTambahan) {
   Modal.pilih({
-    judul:'Pilih jenis',
-    opsi: SEED_AKUN.map(s => ({ id:s.kode, nama:s.nama, ikon:s.ini,
+    judul: 'Pilih jenis',
+    opsi: SEED_AKUN.map(s => ({
+      id: s.kode, nama: s.nama, ikon: s.ini,
       ket: s.jenis === 'bank' ? 'Bank' : s.jenis === 'ewallet' ? 'E-wallet'
-         : s.jenis === 'tunai' ? 'Uang fisik' : 'Tulis sendiri' })),
+         : s.jenis === 'tunai' ? 'Uang fisik' : 'Tulis sendiri'
+    })),
     onPilih: o => {
       const seed = SEED_AKUN.find(s => s.kode === o.id);
+      const bebas = seed.kode === 'lainnya';
+      const medan = [];
+
+      if (bebas) {
+        medan.push({ nama:'judul', label:'Nama tempat',
+                     placeholder:'mis. Koperasi Sekolah' });
+      } else {
+        medan.push({ nama:'_bank', label:'Bank / dompet', tipe:'statis',
+                     nilai: seed.nama, ikon: seed.ini });
+        medan.push({ nama:'judul', label:'Judul (opsional)',
+                     placeholder:'mis. Gaji, Tabungan, Usaha' });
+      }
+      if (opsiTambahan && opsiTambahan.saldo) {
+        medan.push({ nama:'saldo', label:'Saldo saat ini', tipe:'angka', placeholder:'0' });
+      }
+
       Modal.form({
-        judul:'Tambah ' + seed.nama,
-        medan: [
-          { nama:'nama', label:'Nama tampilan',
-            nilai: seed.kode === 'lainnya' ? '' : seed.nama, placeholder:'mis. BCA Gaji' },
-          { nama:'saldo', label:'Saldo saat ini', tipe:'angka', placeholder:'0' }
-        ],
+        judul: bebas ? 'Tambah tempat' : 'Tambah ' + seed.nama,
+        medan,
         onSimpan: v => {
-          if (!v.nama) return 'Nama tidak boleh kosong.';
-          const a = Store.tambahAkun({ nama:v.nama,
-            bank_kode: seed.kode === 'lainnya' ? '' : seed.kode, jenis: seed.jenis });
-          if (v.saldo > 0) {
-            const kat = Store.tambahKategori({ nama:'Saldo Awal', tipe:'pemasukan' });
-            Store.catat({ jenis:'saldo_awal', nominal:v.saldo, akun_id:a.id,
-              kantong_id: Store.kantongDefault().id, kategori_id:kat.id, keterangan:'Saldo awal' });
-          }
-          if (cb) cb(a.id); else segarkan();
+          if (bebas && !v.judul) return 'Nama tidak boleh kosong.';
+          /* judul hanya PELENGKAP nama bank, bukan pengganti */
+          const nama = bebas ? v.judul
+                     : (v.judul ? seed.nama + ' ' + v.judul : seed.nama);
+          onSelesai({ seed, nama, saldo: v.saldo || 0 });
         }
       });
     }
   });
+}
+
+function dialogTambahAkun(cb) {
+  dialogPilihBank(({ seed, nama, saldo }) => {
+    const a = Store.tambahAkun({
+      nama, bank_kode: seed.kode === 'lainnya' ? '' : seed.kode, jenis: seed.jenis
+    });
+    if (saldo > 0) {
+      const kat = Store.tambahKategori({ nama:'Saldo Awal', tipe:'pemasukan' });
+      Store.catat({ jenis:'saldo_awal', nominal:saldo, akun_id:a.id,
+        kantong_id: Store.kantongDefault().id, kategori_id:kat.id, keterangan:'Saldo awal' });
+    }
+    if (cb) cb(a.id); else segarkan();
+  }, { saldo: true });
 }
 
 /* ══════════════════════════════════════════════
@@ -902,8 +1106,9 @@ function renderTransaksi() {
 
   const w = kosong($('#txList'));
   if (!daftar.length) {
-    w.appendChild(el('p', { class:'empty' },
-      cari || fk.value ? 'Tidak ada yang cocok.' : 'Belum ada transaksi.\nTekan tombol + untuk mencatat.'));
+    w.appendChild(cari || fk.value
+      ? el('p', { class:'empty' }, 'Tidak ada yang cocok dengan pencarianmu.')
+      : kartuKosong('Belum ada transaksi', 'Tekan tombol + di bawah untuk mencatat yang pertama.'));
     return;
   }
 

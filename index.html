@@ -120,11 +120,26 @@
       </div>
     </div>
 
-    <!-- step 5: matriks -->
+    <!-- step 5: total dana titipan -->
     <div class="ob-step" data-step="5" hidden>
-      <h2>Pecah per sumber dana</h2>
-      <p class="muted">Dari saldo tiap tempat, berapa yang milikmu dan berapa yang titipan? Ini yang bikin angka "uang saya bersih" jadi benar.</p>
-      <div id="obMatriks" class="matriks"></div>
+      <h2>Berapa dana titipan yang kamu pegang?</h2>
+      <p class="muted">Isi <b>totalnya saja</b>. Tidak perlu dipilah per rekening — uang titipan memang sering tersebar, dan sisanya dihitung sistem.</p>
+
+      <div id="obTitipanNominal" class="saldo-list"></div>
+
+      <div class="hitung" id="obHitung"></div>
+
+      <button class="btn btn-dashed btn-block" id="obRinciToggle">
+        Atur sendiri per tempat
+      </button>
+
+      <div id="obRinciWrap" hidden>
+        <div class="divider"></div>
+        <p class="label-cap">Rincian per tempat</p>
+        <p class="fineprint" style="margin:-4px 0 12px">Isi kalau kamu tahu persis uang titipan itu ada di rekening mana. Kalau dikosongkan, sistem membaginya sendiri secara proporsional.</p>
+        <div id="obMatriks" class="matriks"></div>
+      </div>
+
       <div class="ob-nav">
         <button class="btn btn-ghost" data-ob-back>Kembali</button>
         <button class="btn btn-primary" data-ob-next id="obMatriksNext">Lanjut</button>
@@ -166,18 +181,18 @@
 
     <div id="warnBox"></div>
 
-    <h3 class="sec-title">Rekening &amp; dompet</h3>
+    <h3 class="sec-title" id="stAkun">Rekening &amp; dompet</h3>
     <div class="acc-scroll" id="dashAkun"></div>
 
     <div id="dashKantongWrap">
-      <h3 class="sec-title">Sumber dana</h3>
+      <h3 class="sec-title" id="stKantong">Sumber dana</h3>
       <div class="kantong-list" id="dashKantong"></div>
     </div>
 
-    <h3 class="sec-title">Pengeluaran 30 hari <small class="muted" id="dashTotalKeluar"></small></h3>
+    <h3 class="sec-title" id="stGrafik">Pengeluaran 30 hari <small class="muted" id="dashTotalKeluar"></small></h3>
     <div class="bars" id="dashBars"></div>
 
-    <h3 class="sec-title">Terakhir dicatat</h3>
+    <h3 class="sec-title" id="stTerakhir">Terakhir dicatat</h3>
     <div class="tx-list" id="dashTx"></div>
 
     <div class="pad-bottom"></div>

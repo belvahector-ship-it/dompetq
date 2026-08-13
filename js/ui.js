@@ -91,6 +91,40 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g,
 
 const CHEVRON = '<svg viewBox="0 0 12 12"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>';
 
+/* ── ikon ───────────────────────────────────
+   Garis tebal seragam, mengikuti bahasa desain
+   neo-brutalist: tanpa isian, tanpa gradasi. */
+const IKON = {
+  dompet:   '<path d="M3 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 9h18"/><circle cx="16" cy="14" r="1.4"/>',
+  lapis:    '<path d="M12 3 3 8l9 5 9-5z"/><path d="m3 13 9 5 9-5"/>',
+  grafik:   '<path d="M5 20V11M12 20V5M19 20v-6"/>',
+  jam:      '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  tag:      '<path d="M3.5 11.5V5a1.5 1.5 0 0 1 1.5-1.5h6.5L20 12l-8 8z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
+  orang:    '<circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
+  awan:     '<path d="M7 18a4 4 0 0 1 .5-8 5.5 5.5 0 0 1 10.6 1.4A3.5 3.5 0 0 1 17.5 18z"/>',
+  kotak:    '<path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5z"/><path d="M4 8.5 12 13l8-4.5M12 13v7"/>',
+  gembok:   '<rect x="4.5" y="10.5" width="15" height="9.5" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
+  hati:     '<path d="M12 20s-7-4.4-7-9.2A3.9 3.9 0 0 1 12 8a3.9 3.9 0 0 1 7 2.8C19 15.6 12 20 12 20z"/>',
+  peringatan:'<path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17.2v.1"/>',
+  unduh:    '<path d="M12 4v11"/><path d="m7.5 11 4.5 4.5 4.5-4.5"/><path d="M4.5 20h15"/>',
+  cek:      '<path d="m5 12.5 4.5 4.5L19 7"/>'
+};
+
+function svgIkon(nama, ukuran) {
+  const s = ukuran || 18;
+  return `<svg class="ikon" viewBox="0 0 24 24" width="${s}" height="${s}" ` +
+         `fill="none" stroke="currentColor" stroke-width="2.1" ` +
+         `stroke-linecap="round" stroke-linejoin="round">${IKON[nama] || ''}</svg>`;
+}
+
+/* menyisipkan ikon di depan judul bagian */
+function judulBagian(elemen, nama, teks, kanan) {
+  kosong(elemen);
+  elemen.appendChild(el('span', { class:'st-kiri', html: svgIkon(nama, 15) + '<span>' + esc(teks) + '</span>' }));
+  if (kanan !== undefined) elemen.appendChild(el('small', null, kanan || ''));
+  return elemen;
+}
+
 /* ── toast ──────────────────────────────────── */
 let toastTimer;
 function toast(pesan) {
@@ -196,6 +230,20 @@ const Modal = {
     const inputs = {};
 
     medan.forEach(m => {
+      /* baris terkunci — nilai yang tidak boleh diubah pengguna,
+         mis. nama bank yang sudah dipilih dari daftar */
+      if (m.tipe === 'statis') {
+        wrap.appendChild(el('div', { class:'field' }, [
+          el('span', null, m.label),
+          el('div', { class:'terkunci' }, [
+            m.ikon ? el('span', { class:'terkunci-ico' }, m.ikon) : null,
+            el('b', null, m.nilai),
+            el('span', { class:'terkunci-gembok', html: svgIkon('gembok', 14) })
+          ])
+        ]));
+        return;
+      }
+
       const lbl = el('label', { class:'field' });
       lbl.appendChild(el('span', null, m.label));
       let inp;
@@ -225,6 +273,8 @@ const Modal = {
           aksi: () => {
             const nilai = {};
             medan.forEach(m => {
+              /* baris statis tidak punya input — nilainya sudah tetap */
+              if (m.tipe === 'statis') { nilai[m.nama] = m.nilai; return; }
               nilai[m.nama] = m.tipe === 'angka' ? bacaAngka(inputs[m.nama])
                                                  : inputs[m.nama].value.trim();
             });

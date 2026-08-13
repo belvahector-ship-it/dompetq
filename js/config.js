@@ -12,6 +12,11 @@
    daftar Authorized JavaScript origins di bawah.
    ══════════════════════════════════════════════ */
 
+const VERSI_APP  = '1.0.0';
+const TAHAP_APP  = 'beta';
+const KREDIT_APP = 'ibstudio.my.id';
+const KREDIT_URL = 'https://ibstudio.my.id';
+
 const GOOGLE = {
   /* Proyek: DompetQ (dompetq-belva-2026)
      Pemilik: belvahector69@gmail.com */

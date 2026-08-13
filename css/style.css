@@ -280,6 +280,69 @@ input,select{font:inherit;color:inherit}
 }
 .sec-title small{text-transform:none;letter-spacing:0;font-weight:700;font-size:12.5px;
   color:var(--ink-3);font-family:var(--font-num)}
+.sec-title .st-kiri{display:flex;align-items:center;gap:7px}
+.ikon{flex:none;display:block}
+
+/* ── keadaan kosong ── */
+.kosong-kartu{
+  display:flex;flex-direction:column;align-items:center;text-align:center;
+  padding:22px 20px 24px;background:var(--cream);
+  border:var(--bd) dashed var(--ink-3);border-radius:var(--r);
+}
+.kosong-maskot{width:auto;height:110px;margin-bottom:10px;opacity:.9}
+.kosong-kartu b{font-family:var(--font-display);font-size:15.5px;margin-bottom:3px}
+.kosong-kartu small{color:var(--ink-3);font-weight:600;line-height:1.5;max-width:250px}
+
+/* ── baris terkunci di dalam form ── */
+.terkunci{
+  display:flex;align-items:center;gap:10px;padding:12px 14px;
+  border:var(--bd) solid var(--ink);border-radius:var(--r-sm);
+  background:var(--surface-alt);
+}
+.terkunci b{flex:1;font-size:15px}
+.terkunci-ico{
+  flex:none;min-width:38px;height:34px;padding:0 7px;border-radius:9px;
+  border:2px solid var(--ink);background:var(--amber-soft);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display);font-size:11px;font-weight:800;
+}
+.terkunci-gembok{display:flex;color:var(--ink-3)}
+
+/* ── kartu hitung dana titipan ── */
+.hitung{
+  background:var(--surface);border:var(--bd) solid var(--ink);
+  border-radius:var(--r);padding:16px;box-shadow:var(--sh-sm);margin-top:18px;
+}
+.hitung.bahaya{background:var(--red-soft)}
+.hitung-baris{display:flex;justify-content:space-between;align-items:baseline;
+  gap:12px;padding:5px 0;font-size:14px;font-weight:600;color:var(--ink-2)}
+.hitung-baris b{font-family:var(--font-num);font-weight:700;color:var(--ink)}
+.hitung-garis{height:2px;background:var(--ink);margin:8px 0;opacity:.15}
+.hitung-baris.hasil{font-size:15px;color:var(--ink);font-weight:800}
+.hitung-baris.hasil b{font-size:20px}
+.hitung .bahaya .hitung-baris.hasil b{color:var(--red-ink)}
+.hitung-pesan{
+  display:flex;align-items:flex-start;gap:7px;margin:12px 0 0;
+  font-size:12.5px;line-height:1.5;font-weight:600;color:var(--green-ink);
+}
+.hitung.bahaya .hitung-pesan{color:var(--red-ink)}
+.hitung-pesan .ikon{margin-top:1px}
+
+/* ── footer kredit ── */
+.kredit{
+  display:flex;align-items:center;justify-content:center;gap:7px;flex-wrap:wrap;
+  margin:26px 0 4px;font-size:11px;font-weight:700;color:var(--ink-3);
+  text-transform:uppercase;letter-spacing:.05em;
+}
+.kredit-versi{
+  background:var(--surface-alt);border:1.5px solid var(--line-soft);
+  border-radius:100px;padding:2px 8px;font-family:var(--font-num);
+  text-transform:none;letter-spacing:0;font-size:10.5px;
+}
+.kredit-pisah{opacity:.5}
+.kredit a{color:var(--ink-3);text-decoration:none;border-bottom:1.5px solid var(--line-soft)}
+.kredit a:active{color:var(--ink)}
+.ob-step .kredit{margin-top:34px}
 
 .acc-scroll{display:flex;gap:11px;overflow-x:auto;padding:4px var(--pad) 10px;
   margin:0 calc(var(--pad) * -1)}
