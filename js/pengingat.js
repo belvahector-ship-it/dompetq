@@ -48,6 +48,33 @@ const Pengingat = {
     return bulanIni <= h ? bulanIni : diBulan(h.getFullYear(), h.getMonth() - 1);
   },
 
+  /* Tanggal jatuh tempo BERIKUTNYA — yang belum lewat.
+     Dipakai beranda untuk menampilkan apa yang sedang menunggu
+     giliran, supaya bagian pengingat tetap berguna di hari-hari
+     ketika tidak ada satu pun yang jatuh tempo. */
+  jatuhBerikut(p, kini) {
+    kini = kini || new Date();
+    const h = new Date(kini.getFullYear(), kini.getMonth(), kini.getDate());
+
+    if (p.jadwal_tipe === 'harian')
+      return new Date(h.getFullYear(), h.getMonth(), h.getDate() + 1);
+
+    if (p.jadwal_tipe === 'mingguan') {
+      const target = Number(p.jadwal_nilai) || 0;
+      let maju = (target - h.getDay() + 7) % 7;
+      if (maju === 0) maju = 7;                 // hari ini sudah lewat gilirannya
+      return new Date(h.getFullYear(), h.getMonth(), h.getDate() + maju);
+    }
+
+    const hariTarget = Math.min(Math.max(Number(p.jadwal_nilai) || 1, 1), 31);
+    const diBulan = (thn, bln) => {
+      const akhir = new Date(thn, bln + 1, 0).getDate();
+      return new Date(thn, bln, Math.min(hariTarget, akhir));
+    };
+    const bulanIni = diBulan(h.getFullYear(), h.getMonth());
+    return bulanIni > h ? bulanIni : diBulan(h.getFullYear(), h.getMonth() + 1);
+  },
+
   /* ── mana yang perlu ditanyakan sekarang ── */
   perluDitanya(db, kini) {
     kini = kini || new Date();
@@ -104,6 +131,29 @@ const Pengingat = {
     if (n <= 0) return 'hari ini';
     if (n === 1) return 'kemarin';
     return n + ' hari lalu';
+  },
+
+  teksSisa(n) {
+    if (n <= 0) return 'hari ini';
+    if (n === 1) return 'besok';
+    if (n < 7) return n + ' hari lagi';
+    if (n < 14) return 'minggu depan';
+    return n + ' hari lagi';
+  },
+
+  /* Pengingat aktif yang belum jatuh tempo, paling dekat lebih dulu. */
+  berikutnya(db, kini) {
+    kini = kini || new Date();
+    const hariIni = new Date(kini.getFullYear(), kini.getMonth(), kini.getDate());
+    const menunggu = new Set(this.perluDitanya(db, kini).map(x => x.p.id));
+
+    return (db.pengingat || [])
+      .filter(p => p.aktif && !menunggu.has(p.id))
+      .map(p => {
+        const jatuh = this.jatuhBerikut(p, kini);
+        return { p, jatuh, sisa: Math.round((jatuh - hariIni) / 864e5) };
+      })
+      .sort((a, b) => a.sisa - b.sisa);
   },
 
   /* ── notifikasi browser ──

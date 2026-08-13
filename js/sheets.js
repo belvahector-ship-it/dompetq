@@ -46,7 +46,6 @@ const Google = {
   token: null,          // { access_token, kedaluwarsa }
   profil: null,         // { email, nama, gambar }
   scopeDiberikan: [],   // izin yang BENAR-BENAR dicentang pengguna
-  _tokenClient: null,
   _gisSiap: null,
 
   /* memuat pustaka GIS sekali saja */
@@ -87,6 +86,22 @@ const Google = {
         fileId: fileId || null
       }));
     } catch (e) {}
+  },
+
+  /* Id berkas hanya boleh diwarisi kalau akunnya sama.
+
+     Satu perangkat bisa dipakai bergantian oleh dua akun Google —
+     akun pribadi dan akun kerja, atau HP yang dipinjam. Id berkas
+     milik akun sebelumnya tidak bisa dibuka akun yang baru: Drive
+     menjawab 404 atau 403, dan macetnya muncul sebagai "spreadsheet
+     tidak ditemukan" padahal berkasnya baik-baik saja — hanya milik
+     orang lain. */
+  _sesuaikanSesi() {
+    const lama = this.sesiTersimpan();
+    const email = this.profil ? this.profil.email : '';
+    const sama = lama && lama.email && email && lama.email === email;
+    if (!sama && typeof SheetsAdapter !== 'undefined') SheetsAdapter.lupakanBerkas();
+    this.ingatSesi(sama ? lama.fileId : null);
   },
 
   sesiTersimpan() {
@@ -134,24 +149,56 @@ const Google = {
     return this.mintaToken({ prompt: 'consent' });
   },
 
+  /* Permintaan yang sedang berjalan. GIS hanya sanggup melayani satu
+     permintaan token pada satu waktu: permintaan kedua membatalkan
+     yang pertama, dan callback yang pertama tidak pernah dipanggil lagi.
+     Menekan "Sambungkan" dua kali sudah cukup untuk membuat tombolnya
+     mati selamanya sampai halaman dimuat ulang. */
+  _sedangMinta: null,
+
   /* interaktif  : buka popup izin Google
      diam-diam   : perpanjang token tanpa mengganggu (prompt kosong) */
-  async mintaToken(opsi) {
+  mintaToken(opsi) {
+    if (this._sedangMinta) return this._sedangMinta;
+    this._sedangMinta = this._mintaTokenSekali(opsi || {});
+    /* dibersihkan apa pun hasilnya — kalau tidak, satu kegagalan
+       membuat semua percobaan berikutnya memakai janji yang sudah mati */
+    const bersih = () => { this._sedangMinta = null; };
+    this._sedangMinta.then(bersih, bersih);
+    return this._sedangMinta;
+  },
+
+  async _mintaTokenSekali(opsi) {
     await this.muatGIS();
-    opsi = opsi || {};
+    const diam = !opsi.prompt;
 
     return new Promise((selesai, gagal) => {
-      if (!this._tokenClient) {
-        this._tokenClient = google.accounts.oauth2.initTokenClient({
-          client_id: GOOGLE.clientId,
-          scope: GOOGLE.scopes,
-          callback: () => {}          // diganti tiap permintaan
-        });
-      }
+      /* Ketiga jalan keluar — berhasil, error OAuth, error non-OAuth —
+         harus melewati satu pintu. Tanpa ini, callback yang telat
+         datang sesudah timeout akan menyelesaikan janji dua kali. */
+      let tuntas = false;
+      const jadi  = (v) => { if (!tuntas) { tuntas = true; clearTimeout(jam); selesai(v); } };
+      const batal = (e) => { if (!tuntas) { tuntas = true; clearTimeout(jam); gagal(e); } };
 
-      this._tokenClient.callback = async (resp) => {
-        if (resp.error) {
-          return gagal(new Error(pesanOAuth(resp.error)));
+      /* Jaring pengaman terakhir.
+
+         GIS tidak menjanjikan callback-nya SELALU dipanggil: popup yang
+         diblokir diam-diam, cookie pihak ketiga yang ditolak, atau
+         iframe yang gagal dimuat bisa membuatnya membisu. Sebelum ada
+         batas waktu ini, keheningan itu menggantung janji selamanya —
+         layar berhenti di "Membuka login Google…" dan pemulihan sesi
+         di latar tidak pernah selesai, jadi data dari perangkat lain
+         tidak pernah ikut terbaca. */
+      const jam = setTimeout(() => {
+        batal(new Error(diam
+          ? 'Google tidak menjawab permintaan sesi. Coba sambungkan ulang.'
+          : 'Login Google tidak selesai. Popup mungkin tertutup atau ' +
+            'diblokir browser. Izinkan popup untuk situs ini, lalu coba lagi.'));
+      }, diam ? 20000 : 180000);
+
+      const terima = async (resp) => {
+        if (!resp || resp.error) {
+          return batal(new Error(pesanOAuth((resp && resp.error) || 'unknown')));
         }
         this.token = {
           access_token: resp.access_token,
@@ -168,7 +215,7 @@ const Google = {
         const kurang = this.scopeKurang();
         if (kurang.length) {
           this.token = null;
-          return gagal(new Error(pesanScopeKurang(kurang)));
+          return batal(new Error(pesanScopeKurang(kurang)));
         }
 
         try {
@@ -178,11 +225,31 @@ const Google = {
              tetap harus bertahan, kalau tidak pengguna kehilangan
              sambungannya setiap kali halaman dimuat ulang justru pada saat
              sedang membereskan kegagalan itu. */
-          const lama = this.sesiTersimpan();
-          this.ingatSesi(lama && lama.fileId);
-          selesai(this.token);
-        } catch (e) { gagal(e); }
+          this._sesuaikanSesi();
+          jadi(this.token);
+        } catch (e) { batal(e); }
       };
+
+      /* Klien dibuat baru tiap permintaan, tidak disimpan.
+
+         Dulu satu klien dipakai berulang dengan callback yang ditukar
+         tiap kali. Cara itu tidak bisa memasang error_callback — GIS
+         hanya membacanya saat klien dibuat — dan justru di situlah
+         "popup ditutup" dan "popup diblokir" dilaporkan. Keduanya tidak
+         pernah sampai ke callback biasa, jadi kegagalan yang paling
+         sering terjadi adalah kegagalan yang paling tidak terlihat. */
+      let klien;
+      try {
+        klien = google.accounts.oauth2.initTokenClient({
+          client_id: GOOGLE.clientId,
+          scope: GOOGLE.scopes,
+          callback: terima,
+          error_callback: (err) => batal(new Error(
+            pesanOAuth((err && (err.type || err.error)) || 'unknown')))
+        });
+      } catch (e) {
+        return batal(new Error('Google Identity Services gagal disiapkan: ' + e.message));
+      }
 
       try {
         const minta = { prompt: opsi.prompt || '' };
@@ -190,9 +257,9 @@ const Google = {
            tidak berhenti di layar "pilih akun" pada pengguna yang punya
            beberapa akun Google. */
         if (opsi.hint) minta.hint = opsi.hint;
-        this._tokenClient.requestAccessToken(minta);
+        klien.requestAccessToken(minta);
       } catch (e) {
-        gagal(new Error('Popup Google tidak bisa dibuka. Izinkan popup untuk situs ini.'));
+        batal(new Error('Popup Google tidak bisa dibuka. Izinkan popup untuk situs ini.'));
       }
     });
   },
@@ -231,6 +298,10 @@ const Google = {
     this.token = null;
     this.profil = null;
     this.scopeDiberikan = [];
+    /* Permintaan yang mungkin masih menggantung dilepas juga. Kalau
+       tidak, menyambungkan lagi sesudah keluar akan mengembalikan
+       janji milik sesi yang sudah dibuang. */
+    this._sedangMinta = null;
     this.lupakanSesi();
   },
 
@@ -307,12 +378,21 @@ function alasanGoogle(err) {
   return err.status || '';                                 // mis. PERMISSION_DENIED
 }
 
+/* Dua keluarga kode masuk ke sini: `error` dari respons OAuth, dan
+   `type` dari error_callback GIS (popup_closed, popup_failed_to_open,
+   unknown). Keduanya dipetakan di satu tempat supaya pesan yang dilihat
+   pengguna sama, dari jalur mana pun kegagalannya datang. */
 function pesanOAuth(kode) {
   const peta = {
+    popup_closed: 'Jendela login Google ditutup sebelum selesai. Coba lagi dan selesaikan sampai layar izin.',
     popup_closed_by_user: 'Jendela login ditutup sebelum selesai.',
     access_denied: 'Izin ditolak. Aplikasi tidak bisa membuka spreadsheet tanpa izin itu.',
-    popup_failed_to_open: 'Popup diblokir browser. Izinkan popup untuk situs ini.',
-    idpiframe_initialization_failed: 'Browser memblokir cookie pihak ketiga. Izinkan cookie untuk accounts.google.com.'
+    popup_failed_to_open: 'Popup diblokir browser. Izinkan popup untuk situs ini, lalu coba lagi.',
+    idpiframe_initialization_failed: 'Browser memblokir cookie pihak ketiga. Izinkan cookie untuk accounts.google.com.',
+    /* Yang paling sering: belum pernah login di perangkat ini, atau
+       izinnya sudah dicabut. Wajar terjadi dan bukan kerusakan — pesan
+       ini hanya terlihat kalau pengguna memang sedang menyambungkan. */
+    unknown: 'Sesi Google tidak tersedia di perangkat ini. Tekan "Sambungkan Google Sheets" untuk masuk.'
   };
   return peta[kode] || ('Login Google gagal: ' + kode);
 }
@@ -637,12 +717,19 @@ const SheetsAdapter = {
     this._kapasitas = kap;
   },
 
+  /* Melupakan berkas yang sedang dipegang, tanpa menyentuh apa pun
+     di Drive. Dipakai saat akun Google berganti: id berkas milik akun
+     lama tidak berlaku untuk akun baru. */
+  lupakanBerkas() {
+    this.fileId = null;
+    this._kapasitas = null;
+  },
+
   /* Tidak menghapus berkas pengguna — hanya melepas kaitannya.
      Menghapus data keuangan orang dari Drive-nya bukan wewenang
      aplikasi ini; kalau mau dihapus, pengguna melakukannya sendiri. */
   async hapus() {
-    this.fileId = null;
-    this._kapasitas = null;
+    this.lupakanBerkas();
     this.galatTerakhir = null;
   },
 
@@ -821,5 +908,55 @@ const Sinkron = {
     (b || []).forEach(t => { if (!peta.has(t.id)) peta.set(t.id, t); });
     return Array.from(peta.values())
       .sort((x, y) => new Date(x.timestamp) - new Date(y.timestamp));
+  },
+
+  /* Daftar bernomor id yang ikut disatukan bersama transaksi. */
+  MASTER: ['akun','kantong','kategori','pihak','pengingat'],
+
+  satukanDaftar(a, b) {
+    const peta = new Map();
+    (a || []).forEach(x => peta.set(x.id, x));
+    (b || []).forEach(x => { if (!peta.has(x.id)) peta.set(x.id, x); });
+    return Array.from(peta.values());
+  },
+
+  /* Penyatuan penuh dua salinan basis data.
+
+     Master data HARUS ikut disatukan, bukan hanya transaksi.
+     Rekening, sumber dana, dan kategori punya id yang dibuat di
+     perangkat masing-masing: transaksi dari perangkat lain menunjuk
+     id yang tidak ada di sini. Kalau yang disatukan cuma transaksinya,
+     catatan itu masuk sebagai baris tanpa nama rekening, tidak ikut
+     terhitung di saldo mana pun, dan tidak bisa disaring — terlihat
+     seperti data rusak padahal hanya kehilangan pasangannya.
+
+     Master data hanya boleh dihapus kalau belum pernah dipakai
+     (lihat Store.hapusAkun dan kawan-kawan), jadi paling buruk
+     penyatuan ini memunculkan kembali satu baris kosong yang bisa
+     dihapus lagi — jauh lebih ringan daripada transaksi yatim.
+
+     Profil diambil dari sisi LOKAL: di dalamnya ada kunci saldo
+     (PIN) milik perangkat ini, yang tidak boleh tertimpa perangkat
+     lain. */
+  satukan(lokal, jauh) {
+    if (!jauh)  return lokal;
+    if (!lokal) return jauh;
+
+    const db = Object.assign({}, lokal);
+    db.transaksi = this.satukanTransaksi(lokal.transaksi, jauh.transaksi);
+    this.MASTER.forEach(k => { db[k] = this.satukanDaftar(lokal[k], jauh[k]); });
+    return db;
+  },
+
+  /* Berapa banyak transaksi milik sisi jauh yang belum ada di sini,
+     dan sebaliknya. Dipakai untuk memberi tahu pengguna apa yang
+     sebenarnya berubah, bukan sekadar "tersinkron". */
+  selisih(lokal, jauh) {
+    const idL = new Set(((lokal && lokal.transaksi) || []).map(t => t.id));
+    const idJ = new Set(((jauh  && jauh.transaksi)  || []).map(t => t.id));
+    let masuk = 0, keluar = 0;
+    idJ.forEach(id => { if (!idL.has(id)) masuk++; });
+    idL.forEach(id => { if (!idJ.has(id)) keluar++; });
+    return { masuk, keluar };
   }
 };

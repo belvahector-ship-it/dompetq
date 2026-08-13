@@ -215,10 +215,29 @@ const Store = {
      yang mengira datanya tersalin ke Drive sebenarnya hanya menyalin
      pada sesi ketika mereka ingat menekan tombolnya.
 
-     Mengembalikan: 'tidak' (tidak ada sesi / izin habis),
-     'siap' (tersambung), 'unduh', 'bentrok', atau 'galat'. */
-  async pulihkanSheets() {
-    if (!(await Google.pulihkan())) return { cara:'tidak' };
+     Mengembalikan: 'tidak' (belum pernah tersambung),
+     'perlu-tap' (pernah tersambung, tapi butuh satu ketukan pengguna),
+     'siap' (tersambung), 'unduh', 'satukan', atau 'galat'. */
+  async pulihkanSheets(sudahMasuk) {
+    if (!sudahMasuk && !(await Google.pulihkan())) {
+      /* ── kenapa pemulihan diam-diam sering gagal ──
+
+         Google Identity Services meminta token lewat POPUP, termasuk
+         untuk permintaan yang tidak menampilkan layar izin. Browser
+         hanya mengizinkan popup di dalam penanganan klik; saat halaman
+         baru dimuat tidak ada klik apa pun, jadi popupnya diblokir
+         sebelum sempat menanyakan apa-apa ke Google.
+
+         Alur implisit tidak punya refresh token, dan access token
+         sengaja tidak disimpan (lihat catatan di sheets.js), jadi
+         tidak ada cara menyambung ulang tanpa satu ketukan. Yang bisa
+         dilakukan: mengubah kegagalan diam ini menjadi satu ketukan
+         yang jelas, bukan membiarkan aplikasi tampak "belum pernah
+         tersambung" padahal sesinya masih diingat. */
+      const sesi = Google.sesiTersimpan();
+      return (sesi && sesi.email) ? { cara:'perlu-tap', email: sesi.email }
+                                  : { cara:'tidak' };
+    }
 
     let jauh = null;
     try {
@@ -233,7 +252,22 @@ const Store = {
     }
 
     const arah = Sinkron.bandingkan(this.db, jauh);
-    if (arah === 'bentrok') return { cara:'bentrok', jauh, lokal: this.db };
+
+    /* Kedua sisi sama-sama mencatat sejak terakhir bertemu.
+
+       TIDAK ditanyakan ke pengguna. Pertanyaan itu hanya masuk akal
+       saat menyambungkan akun pertama kali, ketika "punya siapa data
+       ini" masih belum jelas. Pada perangkat yang memang sudah terikat
+       ke spreadsheet yang sama, keduanya sah dan penyatuan tidak
+       menghilangkan apa pun — transaksi ber-id unik dan tidak pernah
+       diedit. Menanyakannya tiap kali aplikasi dibuka justru berbahaya:
+       pengguna yang menekan "Pakai Sheets" karena bosan ditanya akan
+       kehilangan catatan yang baru dibuatnya di perangkat ini. */
+    if (arah === 'bentrok') {
+      const n = Sinkron.selisih(this.db, jauh);
+      const ok = await this.terapkanSinkron('satukan', jauh);
+      return { cara:'satukan', masuk: n.masuk, keluar: n.keluar, ok };
+    }
 
     if (arah === 'unduh') return { cara:'unduh', jauh };
 
@@ -254,7 +288,10 @@ const Store = {
     if (arah === 'unduh' && jauh) {
       this.db = jauh;
     } else if (arah === 'satukan' && jauh) {
-      this.db.transaksi = Sinkron.satukanTransaksi(this.db.transaksi, jauh.transaksi);
+      /* Rekening, sumber dana, dan kategori ikut disatukan — kalau
+         tidak, transaksi dari perangkat lain masuk sambil menunjuk
+         id yang tidak ada di sini. Lihat Sinkron.satukan. */
+      this.db = Sinkron.satukan(this.db, jauh);
     }
 
     this.cermin = SheetsAdapter;
@@ -268,6 +305,114 @@ const Store = {
     else    this.sinkron.galat = pesanGagalSheets();
     this._kabarkanSinkron();
     return ok;
+  },
+
+  /* Menyambung ulang DARI DALAM penanganan klik, supaya popup Google
+     tidak diblokir. Dicoba tanpa layar izin dulu — izinnya memang
+     masih ada, hanya tokennya yang habis; kalau itu pun ditolak,
+     barulah layar izin penuh dibuka. */
+  async sambungLagi() {
+    const sesi = Google.sesiTersimpan();
+    try {
+      await Google.mintaToken({ prompt:'', hint: sesi && sesi.email });
+    } catch (e) {
+      await Google.masuk();
+    }
+    return this.pulihkanSheets(true);
+  },
+
+  /* ── menarik perubahan dari perangkat lain ──
+
+     Menulis ke Sheets berjalan sendiri tiap kali ada perubahan, tapi
+     MEMBACA hanya terjadi sekali, saat aplikasi dibuka. Pada dua
+     perangkat yang dipakai bergantian — HP dan laptop, atau HP lama
+     yang dibiarkan terbuka seharian — perangkat yang tidak ditutup
+     tidak pernah tahu ada catatan baru, lalu menimpanya dengan
+     salinannya sendiri yang lebih tua.
+
+     Dipanggil saat aplikasi kembali dilihat (lihat pasangTarikOtomatis
+     di app.js) dan lewat tombol "Ambil data terbaru".
+
+     Selalu MENYATUKAN, tidak pernah menimpa: aman dijalankan kapan pun
+     tanpa perlu bertanya apa pun ke pengguna. */
+  async tarikSekarang() {
+    if (!this.sinkron.aktif || !this.cermin) return { cara:'tidak' };
+
+    let jauh;
+    try {
+      /* Token diperbarui lebih dulu. Umurnya sejam, dan penarikan ini
+         justru paling sering terjadi pada aplikasi yang sudah lama
+         dibiarkan terbuka — persis saat tokennya kedaluwarsa. Tanpa ini
+         SheetsAdapter.muat() menjawab null dan hasilnya salah dibaca
+         sebagai "belum ada data di Drive". */
+      await Google.tokenValid();
+      jauh = await SheetsAdapter.muat();
+    } catch (e) {
+      this.sinkron.galat = e.message;
+      this._kabarkanSinkron();
+      return { cara:'galat', pesan: e.message };
+    }
+    if (!jauh) return { cara:'kosong' };
+
+    const n = Sinkron.selisih(this.db, jauh);
+    if (!n.masuk && !n.keluar) {
+      /* Sudah sama. Tidak ada tulisan, tidak ada gambar ulang. */
+      this.sinkron.galat = null;
+      this._kabarkanSinkron();
+      return { cara:'sama', masuk:0 };
+    }
+
+    this.db = Sinkron.satukan(this.db, jauh);
+    await this.adapter.simpan(this.db);
+
+    /* Hanya perlu menulis balik kalau perangkat ini memang punya
+       sesuatu yang belum ada di sana. */
+    if (n.keluar) this._cerminkan();
+    else { this.sinkron.terakhir = new Date().toISOString(); this.sinkron.galat = null; }
+
+    this._kabarkanSinkron();
+    return { cara:'ok', masuk: n.masuk, keluar: n.keluar };
+  },
+
+  /* ── masuk lebih dulu, sebelum punya data ──
+
+     Untuk perangkat BARU. Tanpa ini satu-satunya jalan masuk adalah
+     mengisi onboarding tujuh langkah dari nol, membuat rekening dan
+     kategori baru — padahal semuanya sudah ada di Drive. Sesudah itu
+     kedua sisi sama-sama berisi, penyatuannya berantakan, dan pengguna
+     menyimpulkan datanya "tidak ikut pindah".
+
+     Mengembalikan 'ada' kalau spreadsheet-nya ketemu dan sudah dimuat,
+     'kosong' kalau akunnya benar tapi memang belum pernah dipakai. */
+  async masukDenganGoogle() {
+    await Google.masuk();
+    const jauh = await SheetsAdapter.muat();
+    const email = Google.profil ? Google.profil.email : '';
+
+    const kosongan = !jauh ||
+      (!(jauh.transaksi || []).length && !(jauh.akun || []).length);
+    if (kosongan) return { cara:'kosong', email };
+
+    this.db = jauh;
+    this.cermin = SheetsAdapter;
+    this.sinkron.aktif = true;
+    this.sinkron.galat = null;
+    this.sinkron.terakhir = new Date().toISOString();
+    await this.adapter.simpan(this.db);
+    this._kabarkanSinkron();
+    return { cara:'ada', email, jumlah: (jauh.transaksi || []).length };
+  },
+
+  /* Dipakai di akhir onboarding kalau pengguna sudah terlanjur masuk
+     Google di layar pertama tapi Drive-nya masih kosong: datanya yang
+     baru dibuat langsung diunggah, tanpa harus menekan "Sambungkan"
+     lagi di halaman Profil. */
+  async pasangCerminSetelahOnboarding() {
+    if (!Google.masukSudah() || this.sinkron.aktif) return null;
+    /* Hasil tulisnya dikembalikan apa adanya. Gagal menulis TIDAK
+       berarti gagal menyambung — cerminnya tetap terpasang, dan
+       sebab kegagalannya sudah tersimpan untuk ditampilkan di Profil. */
+    return { ok: await this.terapkanSinkron('unggah', null) };
   },
 
   putuskanSheets() {

@@ -26,6 +26,7 @@ function masukApp() {
      yang muncul sebelum aplikasi terlihat membingungkan. */
   setTimeout(periksaPengingat, 700);
   pulihkanSambungan();
+  pasangTarikOtomatis();
 }
 
 /* Menyambung kembali ke Google diam-diam saat aplikasi dibuka.
@@ -35,11 +36,31 @@ async function pulihkanSambungan() {
   let hasil;
   try { hasil = await Store.pulihkanSheets(); }
   catch (e) { return; }
+  await terapkanHasilPulih(hasil);
+}
 
-  if (hasil.cara === 'tidak') return;
+/* Email sesi yang masih diingat tapi belum hidup lagi. Selama berisi,
+   beranda menampilkan satu batang ketuk-untuk-menyambung. */
+let perluSambungLagi = null;
+
+async function terapkanHasilPulih(hasil) {
+  const sebelum = perluSambungLagi;
+  perluSambungLagi = null;
+
+  if (hasil.cara === 'perlu-tap') {
+    perluSambungLagi = hasil.email;
+    if (layarAktif === 'dashboard') renderDashboard();
+    return;
+  }
+
+  if (hasil.cara === 'tidak') {
+    if (sebelum && layarAktif === 'dashboard') renderDashboard();
+    return;
+  }
 
   if (hasil.cara === 'siap' || hasil.cara === 'galat') {
-    if (layarAktif === 'profil') renderSheets();
+    if (layarAktif === 'profil')         renderSheets();
+    else if (layarAktif === 'dashboard') renderDashboard();
     return;
   }
 
@@ -50,13 +71,50 @@ async function pulihkanSambungan() {
     return;
   }
 
-  /* Perangkat ini dan perangkat lain sama-sama mencatat sejak
-     terakhir tersambung. Aplikasi tidak boleh memilih sendiri. */
-  tanyaBentrok(hasil.lokal, hasil.jauh);
+  /* Kedua sisi sama-sama maju — sudah disatukan sendiri oleh Store.
+     Yang tersisa hanya menggambar ulang dan memberi tahu apa yang
+     masuk, supaya perubahan yang tiba-tiba muncul tidak terasa
+     seperti aplikasi berubah sendiri. */
+  if (hasil.cara === 'satukan') {
+    segarkan();
+    if (hasil.masuk) toast(hasil.masuk + ' catatan dari perangkat lain ikut masuk');
+    return;
+  }
 }
 
-/* Dipakai dua kali: saat menyambungkan manual, dan saat pemulihan
-   otomatis menemukan kedua sisi sama-sama maju. */
+/* ── menarik perubahan saat aplikasi kembali dilihat ──
+
+   Sinkron selama ini satu arah setelah aplikasi terbuka: perangkat
+   ini menulis, tapi tidak pernah membaca lagi. Dua perangkat yang
+   sama-sama dibiarkan terbuka jadi tidak pernah bertemu.
+
+   Ditahan 30 detik supaya berpindah-pindah tab tidak berubah jadi
+   hujan permintaan ke Google. */
+let tarikTerakhir = 0;
+
+function pasangTarikOtomatis() {
+  const coba = async () => {
+    if (document.hidden || !Store.sinkron.aktif || Store.sinkron.sedang) return;
+    if (Date.now() - tarikTerakhir < 30000) return;
+    tarikTerakhir = Date.now();
+
+    const h = await Store.tarikSekarang();
+    if (h.cara === 'ok' && h.masuk) {
+      segarkan();
+      toast(h.masuk + ' catatan baru dari perangkat lain');
+    } else if (layarAktif === 'profil') {
+      renderSheets();
+    }
+  };
+
+  document.addEventListener('visibilitychange', coba);
+  window.addEventListener('focus', coba);
+}
+
+/* Hanya untuk penyambungan MANUAL pertama kali, ketika belum jelas
+   data mana yang dimaksud pengguna. Pemulihan otomatis tidak lagi
+   memakai ini — perangkat yang sudah terikat ke spreadsheet yang sama
+   langsung disatukan tanpa bertanya (lihat Store.pulihkanSheets). */
 function tanyaBentrok(lokal, jauh) {
   const pakai = async (arah) => {
     toast('Menyinkronkan…');
@@ -209,6 +267,7 @@ const OB = {
   pasang() {
     $$('[data-ob-next]').forEach(b => b.onclick = () => this.maju());
     $$('[data-ob-back]').forEach(b => b.onclick = () => this.mundur());
+    $('#obMasukGoogle').onclick = () => this.masukGoogle();
 
     $('#obAddAkun').onclick = () => this.dialogAkun();
     $('#obAddKantong').onclick = () => this.dialogKantong();
@@ -236,6 +295,48 @@ const OB = {
 
     if (s === 4) this.renderSaldo();
     if (s === 5) this.renderTitipan();
+  },
+
+  /* ── perangkat baru, data lama ──
+     Jalan pintas dari layar pertama: masuk Google, ambil spreadsheet
+     yang sudah ada, dan lewati onboarding sama sekali. */
+  async masukGoogle() {
+    const tombol = $('#obMasukGoogle');
+    const teksAsli = tombol.textContent;
+    tombol.disabled = true;
+    tombol.textContent = 'Menghubungi Google…';
+
+    let hasil;
+    try {
+      hasil = await Store.masukDenganGoogle();
+    } catch (e) {
+      Modal.buka({
+        judul: 'Gagal masuk',
+        isi: el('p', { class:'muted', style:'margin:0;white-space:pre-line' }, e.message),
+        aksi: [{ label:'Tutup', gaya:'btn-primary' }]
+      });
+      return;
+    } finally {
+      tombol.disabled = false;
+      tombol.textContent = teksAsli;
+    }
+
+    if (hasil.cara === 'ada') {
+      masukApp();
+      toast(hasil.jumlah + ' transaksi dimuat dari Google Sheets');
+      return;
+    }
+
+    /* Akunnya benar, tapi belum pernah ada data di sana. Onboarding
+       tetap dijalankan; sambungannya dipasang otomatis di akhir. */
+    Modal.buka({
+      judul: 'Belum ada data di akun itu',
+      isi: el('p', { class:'muted', style:'margin:0' },
+        (hasil.email ? hasil.email + ' berhasil masuk, tapi b' : 'B') +
+        'elum ada catatan DompetQ di Google Drive-nya. ' +
+        'Lanjutkan pengaturan awal — datanya akan otomatis tersalin ke sana setelah selesai.'),
+      aksi: [{ label:'Lanjutkan', gaya:'btn-primary', aksi: () => this.maju() }]
+    });
   },
 
   maju() {
@@ -641,6 +742,17 @@ const OB = {
     await Store.simpanSekarang();
     masukApp();
     toast('Siap dipakai. Selamat mencatat!');
+
+    /* Kalau tadi sudah masuk Google di layar pertama, sambungannya
+       dipasang sekarang — tanpa ini pengguna harus menekan
+       "Sambungkan" lagi di Profil untuk sesuatu yang sudah mereka
+       lakukan lima menit sebelumnya. */
+    const cermin = await Store.pasangCerminSetelahOnboarding();
+    if (cermin) {
+      renderSheets();
+      toast(cermin.ok ? 'Tersalin ke Google Sheets'
+                      : 'Tersambung, tapi tulis pertama gagal — cek di Profil');
+    }
   }
 };
 
@@ -673,6 +785,8 @@ function renderDashboard() {
     sub.appendChild(el('div', null, [ 'Tersebar di ' + db.akun.length + ' tempat' ]));
   }
 
+  renderSambungLagi();
+
   /* peringatan */
   const wb = kosong($('#warnBox'));
   r.negatif.forEach(n => {
@@ -685,6 +799,8 @@ function renderDashboard() {
       ])
     ]));
   });
+
+  renderPengingatBeranda();
 
   /* ikon judul bagian */
   judulBagian($('#stAkun'), 'dompet', 'Rekening & dompet');
@@ -734,6 +850,119 @@ function renderDashboard() {
   } else {
     akhir.forEach(t => wt.appendChild(barisTx(t)));
   }
+}
+
+/* ── batang "sambungkan lagi" ──
+
+   Popup Google hanya boleh dibuka dari dalam penanganan klik, jadi
+   sambungan tidak bisa hidup sendiri saat halaman dimuat. Tanpa batang
+   ini kegagalan itu tidak terlihat sama sekali: aplikasi tampak
+   seperti belum pernah tersambung, catatan dari perangkat lain tidak
+   pernah muncul, dan pengguna tidak diberi satu pun petunjuk bahwa
+   yang kurang hanyalah satu ketukan. */
+function renderSambungLagi() {
+  const w = kosong($('#sambungBox'));
+  if (!perluSambungLagi) return;
+
+  const jalan = async (tombol) => {
+    tombol.disabled = true;
+    tombol.textContent = 'Menyambungkan…';
+    let hasil;
+    try {
+      hasil = await Store.sambungLagi();
+    } catch (e) {
+      perluSambungLagi = Google.sesiTersimpan() && Google.sesiTersimpan().email;
+      renderDashboard();
+      toast(e.message);
+      return;
+    }
+    await terapkanHasilPulih(hasil);
+    if (Store.sinkron.aktif) toast('Tersambung lagi ke Google Sheets');
+  };
+
+  w.appendChild(el('div', { class:'sambung-bar' }, [
+    el('div', { class:'sambung-ikon', html: svgIkon('awan', 17) }),
+    el('div', { class:'sambung-body' }, [
+      el('b', null, 'Google Sheets belum aktif'),
+      el('small', null, perluSambungLagi + ' — ketuk untuk mengambil catatan dari perangkat lain')
+    ]),
+    el('button', { class:'btn btn-sm btn-primary',
+                   onclick: (e) => jalan(e.currentTarget) }, 'Sambungkan')
+  ]));
+}
+
+/* ── pengingat di beranda ──
+
+   Pop-up saat aplikasi dibuka gampang ditutup refleks, dan sesudah
+   ditutup tidak ada jejaknya sampai aplikasi dibuka lagi besok.
+   Di beranda ia tetap ada: selama belum dijawab, ia masih di sana
+   setiap kali pengguna melihat saldonya.
+
+   Yang sudah jatuh tempo tampil sebagai kartu lengkap dengan
+   tombolnya. Yang belum tampil sebagai satu baris tenang — cukup
+   untuk tahu apa yang sedang menunggu, tidak cukup untuk mengganggu. */
+function renderPengingatBeranda() {
+  const db = Store.db;
+  const wrap = $('#dashPengingatWrap');
+
+  /* Belum pernah membuat pengingat sama sekali → bagian ini tidak
+     ada. Beranda bukan tempat menawarkan fitur. */
+  if (!(db.pengingat || []).some(p => p.aktif)) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+
+  const jatuh = Pengingat.perluDitanya(db);
+  const nanti = Pengingat.berikutnya(db);
+  const w = kosong($('#dashPengingat'));
+
+  judulBagian($('#stPengingatDash'), 'jam', 'Pengingat',
+              jatuh.length ? jatuh.length + ' menunggu' : '');
+
+  jatuh.forEach(item => w.appendChild(kartuPengingat(item)));
+
+  /* Tiga saja. Sisanya ada di Profil — beranda tidak boleh berubah
+     jadi daftar jadwal. */
+  nanti.slice(0, jatuh.length ? 1 : 3).forEach(item => {
+    w.appendChild(el('div', { class:'igt-nanti' }, [
+      el('div', { class:'igt-titik ' + (item.p.arah === 'masuk' ? 'masuk' : 'keluar') }),
+      el('div', { class:'igt-nanti-body' }, [
+        el('b', null, item.p.judul),
+        el('small', null, Pengingat.teksSisa(item.sisa) +
+          (item.p.nominal ? ' · ' + rp(item.p.nominal) : ''))
+      ])
+    ]));
+  });
+}
+
+function kartuPengingat(item) {
+  const p = item.p;
+  const masuk = p.arah === 'masuk';
+
+  const kartu = el('div', { class:'igt-kartu' }, [
+    el('div', { class:'igt-kepala' }, [
+      el('div', { class:'tx-ico ' + (masuk ? 'masuk' : 'keluar') }, masuk ? '+' : '−'),
+      el('div', { class:'igt-judul' }, [
+        el('b', null, p.judul),
+        el('small', null, 'Jatuh ' + Pengingat.teksTelat(item.telat) +
+          (p.nominal ? ' · ' + rp(p.nominal) : ''))
+      ])
+    ]),
+    el('p', { class:'igt-tanya' }, masuk ? 'Uangnya sudah kamu terima?' : 'Sudah kamu bayar?'),
+    el('div', { class:'igt-aksi' }, [
+      el('button', { class:'btn btn-sm btn-ghost', onclick: () => {
+        Pengingat.tundaSehari(p); renderDashboard(); toast('Diingatkan lagi besok');
+      }}, 'Nanti'),
+      el('button', { class:'btn btn-sm btn-ghost', onclick: () => {
+        Pengingat.lewati(p); renderDashboard(); toast('Periode ini dilewati');
+      }}, 'Lewati'),
+      el('button', { class:'btn btn-sm btn-primary', onclick: () => {
+        /* Belum ditandai terpenuhi di sini — lihat catatan di
+           bukaInputDariPengingat. */
+        bukaInputDariPengingat(p, item.jatuh, item.jatuhStr);
+      }}, 'Catat')
+    ])
+  ]);
+
+  return kartu;
 }
 
 /* Keadaan kosong dengan maskot — layar kosong yang cuma berisi teks
@@ -848,7 +1077,10 @@ function detailTx(t) {
    INPUT TRANSAKSI
    ══════════════════════════════════════════════ */
 const TX = { jenis:'keluar', sub:'akun', akun_id:'', akun_tujuan_id:'',
-             kantong_id:'', kantong_tujuan_id:'', kategori_id:'' };
+             kantong_id:'', kantong_tujuan_id:'', kategori_id:'',
+             /* diisi hanya kalau formulir ini dibuka dari sebuah
+                pengingat: { id, jatuhStr } */
+             pengingat: null };
 
 function pasangSheetInput() {
   pasangFormatAngka($('#txNominal'));
@@ -879,6 +1111,7 @@ function bukaInput() {
   TX.akun_id = ak.id; TX.akun_tujuan_id = '';
   TX.kantong_id = kt.id; TX.kantong_tujuan_id = '';
   TX.kategori_id = '';
+  TX.pengingat = null;
 
   $$('#txJenis button').forEach(x => x.classList.toggle('active', x.dataset.j === 'keluar'));
   $('#txNominal').value = '';
@@ -1092,9 +1325,22 @@ function simpanTx() {
 
 function finalTx(calon) {
   Store.catat(calon);
+
+  /* Baru sekarang pengingatnya dianggap terjawab. */
+  if (TX.pengingat) {
+    const p = (Store.db.pengingat || []).find(x => x.id === TX.pengingat.id);
+    if (p) Pengingat.tandaiTerpenuhi(p, TX.pengingat.jatuhStr);
+    TX.pengingat = null;
+  }
+
   tutupInput();
   segarkan();
   toast('Tercatat · ' + rp(calon.nominal));
+
+  /* Kalau pop-up jatuh tempo sedang berjalan, lanjutkan antreannya —
+     dulu rantainya putus di sini dan pengingat kedua tidak pernah
+     ditanyakan sampai aplikasi dibuka lagi. */
+  if (antreanPengingat.length) setTimeout(tanyaBerikutnya, 400);
 }
 
 /* Pemilih bank/e-wallet dipakai bersama oleh onboarding dan halaman Profil.
@@ -1533,6 +1779,22 @@ function renderSheets() {
     }
   }, 'Simpan sekarang'));
 
+  /* Arah sebaliknya. Dipakai kalau baru saja mencatat di perangkat
+     lain dan ingin catatannya muncul di sini sekarang juga, tanpa
+     menunggu aplikasi ditutup dan dibuka lagi. */
+  w.appendChild(el('button', {
+    class:'btn btn-outline btn-block',
+    onclick: async () => {
+      toast('Mengambil dari Sheets…');
+      const h = await Store.tarikSekarang();
+      renderProfil();
+      if (h.cara === 'ok' && h.masuk) { segarkan(); toast(h.masuk + ' catatan baru masuk'); }
+      else if (h.cara === 'ok' || h.cara === 'sama') toast('Sudah paling baru');
+      else if (h.cara === 'kosong') toast('Belum ada data di Google Sheets');
+      else if (h.cara === 'galat') toast('Gagal membaca — lihat keterangan di bawah');
+    }
+  }, 'Ambil data terbaru'));
+
   w.appendChild(el('button', {
     class:'btn btn-outline btn-block',
     onclick: periksaSambungan
@@ -1875,7 +2137,9 @@ function periksaPengingat() {
 
 function tanyaBerikutnya() {
   const item = antreanPengingat.shift();
-  if (!item) return;
+  /* Antrean habis — beranda ikut diperbarui supaya kartu yang barusan
+     dijawab lewat pop-up tidak tertinggal di sana. */
+  if (!item) { if (layarAktif === 'dashboard') renderDashboard(); return; }
 
   const p = item.p;
   const masuk = p.arah === 'masuk';
@@ -1902,8 +2166,7 @@ function tanyaBerikutnya() {
           Pengingat.tundaSehari(p); setTimeout(tanyaBerikutnya, 250);
         }},
       { label:'Sudah, catat', gaya:'btn-primary', aksi: () => {
-          Pengingat.tandaiTerpenuhi(p, item.jatuhStr);
-          bukaInputDariPengingat(p, item.jatuh);
+          bukaInputDariPengingat(p, item.jatuh, item.jatuhStr);
         }}
     ]
   });
@@ -1923,8 +2186,17 @@ function tanyaBerikutnya() {
   }, 10);
 }
 
-function bukaInputDariPengingat(p, tanggal) {
+/* Pengingat ditandai terpenuhi SESUDAH transaksinya benar-benar
+   tersimpan, bukan saat formulirnya dibuka.
+
+   Sebelumnya ditandai lebih dulu: menekan "Sudah, catat" lalu batal —
+   karena nominalnya belum tahu, atau salah tekan — membuat pengingat
+   itu diam sampai periode berikutnya, padahal tidak ada yang dicatat.
+   Justru gaji dan cicilan seperti itulah yang paling merusak angka
+   kalau terlewat. */
+function bukaInputDariPengingat(p, tanggal, jatuhStr) {
   bukaInput();
+  TX.pengingat = { id: p.id, jatuhStr: jatuhStr || tglInput(tanggal) };
   TX.jenis = p.arah;
   TX.akun_id = p.akun_id || (Store.akunDefault() || {}).id;
   TX.kantong_id = p.kantong_id || (Store.kantongDefault() || {}).id;

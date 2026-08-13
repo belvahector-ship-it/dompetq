@@ -151,6 +151,10 @@ Pengingat di sini bukan notifikasi yang lewat begitu saja, melainkan **pertanyaa
 
 Tiap pengingat punya tiga keadaan: *terpenuhi* (sudah dicatat, diam sampai periode berikutnya), *ditunda* ("belum, ingatkan besok"), dan *menunggu* (jatuh tempo lewat, belum dijawab).
 
+Selain pop-up saat aplikasi dibuka, pengingat juga tampil **di beranda**, di atas daftar rekening. Pop-up gampang ditutup refleks dan sesudah itu tidak ada jejaknya sampai besok; kartu di beranda tetap ada selama belum dijawab, tiap kali pengguna melihat saldonya. Yang sudah jatuh tempo tampil sebagai kartu kuning lengkap dengan tombol *Nanti*, *Lewati*, dan *Catat*; yang belum jatuh tempo tampil sebagai satu baris tenang berisi sisa harinya. Kalau belum ada pengingat sama sekali, bagian itu tidak muncul — beranda bukan tempat menawarkan fitur.
+
+Pengingat ditandai terpenuhi **sesudah** transaksinya benar-benar tersimpan, bukan saat formulirnya dibuka. Menekan "Sudah, catat" lalu batal — karena nominalnya belum tahu, atau salah tekan — dulu membuat pengingat itu diam sampai periode berikutnya padahal tidak ada yang dicatat.
+
 Jadwal bisa harian, mingguan, atau bulanan. Tanggal 31 pada bulan pendek jatuh di hari terakhir bulan itu, tidak tumpah ke bulan berikutnya.
 
 Yang **tidak** dilakukan: mencatat transaksi sendiri. Pengingat hanya bertanya; nominal dan tombol simpan tetap di tangan pengguna. Uang tidak boleh dicatat oleh tebakan aplikasi.
@@ -179,11 +183,17 @@ Saldo tidak pernah diedit langsung. Kalau angka di aplikasi beda dengan kenyataa
 
 Menyambungkan: **Profil → Sambungkan Google Sheets**. Spreadsheet `dompetq-data` dibuat di Drive milik pengguna sendiri.
 
-Sambungannya bertahan antar-sesi. Yang disimpan di perangkat hanya email dan id berkas — **access token tidak pernah disimpan**: umurnya sejam, dan menaruh kredensial di `localStorage` berarti skrip apa pun yang berhasil masuk ke halaman bisa memanennya. Saat aplikasi dibuka, token diminta ulang ke Google tanpa jendela apa pun kalau izinnya masih berlaku; kalau sudah habis, aplikasi kembali ke keadaan "belum tersambung" tanpa pesan galat.
+Sambungannya bertahan antar-sesi. Yang disimpan di perangkat hanya email dan id berkas — **access token tidak pernah disimpan**: umurnya sejam, dan menaruh kredensial di `localStorage` berarti skrip apa pun yang berhasil masuk ke halaman bisa memanennya.
 
-Pemulihan itu membandingkan **id transaksi**, bukan jumlahnya. Kalau Drive tidak memuat apa pun yang belum ada di perangkat, sambungan dipasang diam-diam; kalau perangkat lain lebih maju, datanya diambil; kalau dua perangkat sama-sama mencatat sejak terakhir tersambung, pengguna yang memutuskan — dan sebelum ada keputusan, aplikasi tidak menulis apa pun ke Drive.
+**Menyambung ulang butuh satu ketukan, dan itu memang batasnya.** Google Identity Services meminta token lewat popup — termasuk untuk permintaan yang tidak menampilkan layar izin apa pun — dan browser hanya mengizinkan popup di dalam penanganan klik. Saat halaman baru dimuat tidak ada klik, jadi popupnya diblokir sebelum sempat menanyakan apa pun ke Google. Alur implisit tidak punya refresh token dan access token sengaja tidak disimpan, jadi tidak ada jalan lain.
 
-Saat menyambung, ada tiga kemungkinan:
+Percobaan diam-diam tetap dijalankan saat aplikasi dibuka (di WebView APK dan browser yang mengizinkan popup untuk situs ini, ia berhasil). Kalau gagal, beranda menampilkan satu batang **"Google Sheets belum aktif — ketuk untuk mengambil catatan dari perangkat lain"**. Sebelumnya kegagalan ini tidak terlihat sama sekali: aplikasi tampak seperti belum pernah tersambung, catatan dari perangkat lain tidak pernah muncul, dan tidak ada satu pun petunjuk bahwa yang kurang hanya satu ketukan. Ketukan itu meminta token tanpa layar izin dulu — izinnya memang masih ada, hanya tokennya yang habis — dan baru membuka layar izin penuh kalau itu pun ditolak.
+
+Pemulihan itu membandingkan **id transaksi**, bukan jumlahnya. Kalau Drive tidak memuat apa pun yang belum ada di perangkat, sambungan dipasang diam-diam; kalau perangkat lain lebih maju, datanya diambil; kalau dua-duanya maju, keduanya **disatukan sendiri** tanpa bertanya.
+
+Penyatuan otomatis itu sengaja: pertanyaan "pakai yang mana" hanya masuk akal saat menyambungkan akun pertama kali, ketika belum jelas data siapa yang dimaksud. Pada perangkat yang memang sudah terikat ke spreadsheet yang sama, keduanya sah dan penyatuan tidak menghilangkan apa pun. Menanyakannya tiap kali aplikasi dibuka justru berbahaya — pengguna yang menekan "Pakai Sheets" karena bosan ditanya kehilangan catatan yang baru saja dibuatnya.
+
+Saat menyambung **manual** untuk pertama kali, ada tiga kemungkinan:
 
 | Keadaan | Yang terjadi |
 |---|---|
@@ -191,7 +201,11 @@ Saat menyambung, ada tiga kemungkinan:
 | Perangkat masih kosong | Data Sheets diunduh |
 | Dua-duanya berisi | Pengguna memilih: pakai Sheets, atau **satukan** |
 
-Menyatukan aman karena transaksi ber-ID unik dan bersifat append-only — tidak ada yang dobel, tidak ada yang hilang. Master data (akun, sumber dana, kategori) tidak digabung otomatis; itu keputusan pengguna.
+Menyatukan aman karena transaksi ber-ID unik dan bersifat append-only — tidak ada yang dobel, tidak ada yang hilang. **Master data ikut disatukan** (akun, sumber dana, kategori, pihak, pengingat): id-nya dibuat di perangkat masing-masing, jadi transaksi dari perangkat lain menunjuk id yang tidak ada di sini. Kalau yang disatukan hanya transaksinya, catatan itu masuk sebagai baris tanpa nama rekening, tidak terhitung di saldo mana pun, dan terlihat seperti data rusak. Profil tidak ikut — di dalamnya ada PIN kunci saldo milik perangkat ini.
+
+**Perangkat baru** punya jalan pintas di layar pertama: *Sudah punya data? Masuk dengan Google*. Tanpa itu satu-satunya jalan masuk adalah mengisi onboarding tujuh langkah dari nol, membuat rekening dan kategori baru padahal semuanya sudah ada di Drive — dan hasilnya dua sisi yang sama-sama berisi.
+
+**Menarik perubahan.** Menulis ke Sheets berjalan tiap kali ada perubahan, tapi membaca hanya terjadi saat aplikasi dibuka. Aplikasi yang dibiarkan terbuka seharian karena itu tidak pernah tahu ada catatan baru dari perangkat lain. Sekarang penarikan diulang setiap kali aplikasi kembali dilihat (ditahan 30 detik supaya berpindah tab tidak jadi hujan permintaan), dan bisa dipaksa lewat **Profil → Ambil data terbaru**. Penarikan selalu menyatukan, tidak pernah menimpa.
 
 Spreadsheet lahir dengan 1000 baris dan Google **tidak** memperbesarnya sendiri — menulis melewatinya ditolak. Satu transaksi sehari menyentuh batas itu dalam tiga tahun, jadi jumlah baris diperiksa sebelum tiap tulis dan ditambah 500 sekaligus kalau kurang.
 
@@ -240,6 +254,12 @@ Ini ada karena semua penyebab di bawah tampak sama dari luar: satu baris "gagal 
 | *Sesi Google berakhir* | Token habis; mode Testing membatasi 7 hari | Sambungkan lagi |
 | *Baris judul di sheet "…" tidak dikenali* | Baris pertama terhapus saat mengedit langsung di Sheets | Kembalikan baris judul, atau biarkan aplikasi membuat berkas baru |
 | *Google menolak isi permintaan: Unable to parse range* | Ada sheet yang dihapus atau diganti namanya | Kembalikan nama sheet-nya |
+| *Popup diblokir browser* | Browser menolak membuka jendela Google | Izinkan popup untuk situs ini |
+| *Login Google tidak selesai* | Jendela izin ditutup, atau GIS tidak menjawab sama sekali | Coba lagi sampai layar izin selesai |
+
+Kegagalan login yang paling sering — popup ditutup dan popup diblokir — dilaporkan Google lewat `error_callback`, bukan lewat callback biasa. Callback itu hanya bisa dipasang saat klien token dibuat, jadi klien dibuat **baru tiap permintaan**, tidak dipakai ulang dengan callback yang ditukar. Ditambah batas waktu (20 detik untuk perpanjangan diam-diam, 3 menit untuk layar izin) dan penguncian satu permintaan pada satu waktu: sebelumnya kegagalan yang paling sering terjadi adalah kegagalan yang tidak pernah terlihat — janji yang menggantung selamanya, layar berhenti di "Membuka login Google…", dan pemulihan sesi di latar yang tidak pernah selesai sehingga data dari perangkat lain tidak pernah ikut terbaca.
+
+Id berkas yang diingat perangkat hanya diwarisi kalau **email akunnya sama**. Satu perangkat bisa dipakai bergantian oleh dua akun Google, dan id milik akun sebelumnya tidak bisa dibuka akun yang baru — macetnya muncul sebagai "spreadsheet tidak ditemukan" padahal berkasnya baik-baik saja, hanya milik orang lain.
 
 Izin Google diberikan lewat **kotak centang terpisah yang awalnya kosong**. Menekan "Lanjutkan" tanpa mencentangnya membuat login tetap berhasil — email pengguna muncul seperti biasa — sementara setiap tulisan ke spreadsheet ditolak. Karena itu izin diperiksa ulang tepat sesudah login, bukan dibiarkan gagal jauh kemudian saat menyimpan.
 

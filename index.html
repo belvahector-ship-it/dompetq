@@ -36,6 +36,15 @@
         <div class="ob-point"><span>2</span><div><b>Milik siapa uang itu</b><small>Uangmu sendiri, atau titipan orang lain</small></div></div>
       </div>
       <button class="btn btn-primary btn-block" data-ob-next>Mulai</button>
+
+      <!-- Perangkat baru, data lama. Tanpa jalan ini, satu-satunya
+           cara masuk adalah mengisi ulang semuanya dari nol. -->
+      <button class="btn btn-outline btn-block" id="obMasukGoogle" style="margin-top:10px">
+        Sudah punya data? Masuk dengan Google
+      </button>
+      <p class="fineprint" style="text-align:center;margin:2px 0 0">
+        Mengambil catatan yang sudah tersimpan di Google Drive-mu.
+      </p>
     </div>
 
     <!-- step 1: profil -->
@@ -179,7 +188,20 @@
       <div class="hero-sub" id="heroSub"></div>
     </div>
 
+    <!-- Sesi Google yang masih diingat tapi butuh satu ketukan untuk
+         hidup lagi. Lihat Store.pulihkanSheets. -->
+    <div id="sambungBox"></div>
+
     <div id="warnBox"></div>
+
+    <!-- Pengingat yang belum dijawab. Diletakkan di atas daftar
+         rekening: yang paling sering bikin angka meleset adalah gaji
+         dan cicilan yang lupa dicatat, jadi ia harus terlihat sebelum
+         pengguna mulai membaca saldo. -->
+    <div id="dashPengingatWrap" hidden>
+      <h3 class="sec-title" id="stPengingatDash">Pengingat</h3>
+      <div id="dashPengingat"></div>
+    </div>
 
     <h3 class="sec-title" id="stAkun">Rekening &amp; dompet</h3>
     <div class="acc-scroll" id="dashAkun"></div>
