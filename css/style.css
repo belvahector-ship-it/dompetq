@@ -573,6 +573,19 @@ input,select{font:inherit;color:inherit}
 .sheet-grip:active{cursor:grabbing}
 .sheet-grip:active span{opacity:.5;width:56px}
 
+/* judul sheet — hanya muncul saat formulir dipakai untuk mengoreksi */
+.sheet-judul{
+  font-family:var(--font-display);font-weight:800;font-size:17px;
+  margin:0 0 14px;text-align:center;
+}
+/* pilihan sekunder di dalam modal detail: sengaja tidak berbentuk tombol
+   penuh supaya tidak bersaing dengan "Koreksi" */
+.tx-batal-tautan{
+  display:block;width:100%;margin:14px 0 0;padding:4px;background:none;border:0;
+  font-size:13px;font-weight:700;color:var(--ink-3);text-decoration:underline;
+}
+.tx-batal-tautan:active{opacity:.6}
+
 .seg{display:flex;background:var(--surface-alt);border:var(--bd) solid var(--ink);
   border-radius:var(--r-sm);padding:4px;margin-bottom:18px;gap:4px}
 .seg button{flex:1;padding:9px;border-radius:9px;font-size:14px;font-weight:700;color:var(--ink-2)}

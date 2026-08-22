@@ -499,17 +499,49 @@ const Store = {
       kantong_id:'', kantong_tujuan_id:'',
       kategori_id:'', pihak_id:'',
       keterangan:'', bukti_url:'', bukti_thumb:'',
-      reversal_dari:''
+      reversal_dari:'', koreksi_dari:''
     }, t);
     this.db.transaksi.push(tx);
     this.simpanSekarang();
     return tx;
   },
 
-  /* Koreksi = entri pembalik, bukan edit baris lama.
-     Log timestamp harus tetap jujur — ada uang orang
-     lain di dalamnya. (konsep.md §6.3) */
+  /* Membatalkan transaksi = entri pembalik, bukan menghapus baris lama.
+     Log harus tetap jujur — ada uang orang lain di dalamnya.
+     (konsep.md §6.3) */
   batalkan(txId) {
+    const balik = this._buatPembalik(txId);
+    if (!balik) return null;
+    this.db.transaksi.push(balik);
+    this.simpanSekarang();
+    return balik;
+  },
+
+  /* Koreksi isi transaksi.
+
+     Baris lama TIDAK pernah ditimpa. Yang terjadi: entri pembalik
+     untuk baris lama + satu baris baru berisi data yang benar.
+     Saldo langsung sesuai versi yang baru, riwayatnya tetap jujur.
+     Baris baru menyimpan koreksi_dari supaya jejaknya bisa dilacak. */
+  koreksiTx(txId, calon) {
+    const balik = this._buatPembalik(txId);
+    if (!balik) return null;
+    this.db.transaksi.push(balik);
+    const baru = Object.assign({
+      id: uid('trx'),
+      dibuat_pada: new Date().toISOString(),
+      akun_tujuan_id:'', kantong_tujuan_id:'',
+      kategori_id:'', pihak_id:'',
+      keterangan:'', bukti_url:'', bukti_thumb:'',
+      reversal_dari:''
+    }, calon, { koreksi_dari: txId });
+    this.db.transaksi.push(baru);
+    this.simpanSekarang();
+    return baru;
+  },
+
+  /* entri pembalik untuk satu transaksi — belum dimasukkan ke db */
+  _buatPembalik(txId) {
     const asli = this.db.transaksi.find(t => t.id === txId);
     if (!asli || asli.reversal_dari) return null;
     const sudah = this.db.transaksi.some(t => t.reversal_dari === txId);
@@ -535,8 +567,6 @@ const Store = {
       balik.kantong_tujuan_id = asli.kantong_id;
     }
 
-    this.db.transaksi.push(balik);
-    this.simpanSekarang();
     return balik;
   },
 

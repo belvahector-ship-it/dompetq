@@ -1050,25 +1050,43 @@ function detailTx(t) {
   tambah('Kategori', (Store.kategori(t.kategori_id) || {}).nama);
   tambah('Keterangan', t.keterangan);
   tambah('Dicatat', tglPanjang(t.dibuat_pada));
+  if (t.koreksi_dari) tambah('Asal', 'Hasil koreksi transaksi sebelumnya');
 
-  const aksi = [{ label:'Tutup' }];
-  if (!dikoreksi && !t.reversal_dari) {
-    aksi.push({
-      label:'Koreksi', gaya:'btn-danger-ghost',
-      aksi: () => {
+  const bisaDiubah = !dikoreksi && !t.reversal_dari;
+  const isi = el('div', { style:'margin:-6px 0 0' });
+  isi.appendChild(el('div', { html: baris.join('') }));
+
+  /* Pilihan kedua sengaja dibuat kecil dan di bawah: yang dibutuhkan
+     sehari-hari adalah MEMPERBAIKI isian, bukan membatalkan. */
+  if (bisaDiubah) {
+    isi.appendChild(el('button', {
+      class:'tx-batal-tautan',
+      onclick: () => {
+        Modal.tutup();
         Modal.konfirmasi({
-          judul:'Koreksi transaksi',
+          judul:'Batalkan transaksi',
           pesan:'Transaksi asli tetap tersimpan sebagai riwayat, lalu ditambahkan entri pembalik. Saldo kembali seperti sebelum transaksi ini.',
-          labelYa:'Ya, koreksi', gayaYa:'btn-primary',
-          onYa: () => { Store.batalkan(t.id); segarkan(); toast('Sudah dikoreksi'); }
+          labelYa:'Ya, batalkan', gayaYa:'btn-primary',
+          onYa: () => { Store.batalkan(t.id); segarkan(); toast('Transaksi dibatalkan'); }
         });
       }
+    }, 'Batalkan saja, tanpa diganti'));
+  }
+
+  const aksi = [{ label:'Tutup' }];
+  if (bisaDiubah) {
+    aksi.push({
+      label:'Koreksi', gaya:'btn-primary',
+      /* Modal.buka menimpa modal yang sama, jadi menutupnya SETELAH
+         aksi berjalan akan langsung menutup dialog berikutnya. */
+      tutup: false,
+      aksi: () => { Modal.tutup(); bukaInputKoreksi(t); }
     });
   }
 
   Modal.buka({
     judul: dikoreksi ? 'Transaksi (sudah dikoreksi)' : 'Detail transaksi',
-    isi: '<div style="margin:-6px 0 0">' + baris.join('') + '</div>',
+    isi,
     aksi
   });
 }
@@ -1080,7 +1098,14 @@ const TX = { jenis:'keluar', sub:'akun', akun_id:'', akun_tujuan_id:'',
              kantong_id:'', kantong_tujuan_id:'', kategori_id:'',
              /* diisi hanya kalau formulir ini dibuka dari sebuah
                 pengingat: { id, jatuhStr } */
-             pengingat: null };
+             pengingat: null,
+             /* id transaksi yang sedang dikoreksi — kalau terisi, menyimpan
+                berarti membalik baris lama lalu mencatat baris baru */
+             edit: null,
+             /* jenis asli baris yang dikoreksi. 'saldo_awal' tidak punya
+                tombolnya sendiri di segmen, jadi harus diingat terpisah
+                supaya tidak berubah diam-diam jadi pemasukan biasa. */
+             jenisAsli: '' };
 
 function pasangSheetInput() {
   pasangFormatAngka($('#txNominal'));
@@ -1112,11 +1137,15 @@ function bukaInput() {
   TX.kantong_id = kt.id; TX.kantong_tujuan_id = '';
   TX.kategori_id = '';
   TX.pengingat = null;
+  TX.edit = null;
+  TX.jenisAsli = '';
+  judulSheet('');
 
   $$('#txJenis button').forEach(x => x.classList.toggle('active', x.dataset.j === 'keluar'));
   $('#txNominal').value = '';
   $('#txKet').value = '';
   $('#txTgl').value = tglInput(new Date());
+  $('#txSave').textContent = 'Simpan';
   $('#txError').hidden = true;
 
   renderTxRows();
@@ -1129,6 +1158,52 @@ function tutupInput() {
   $('#sheetBackdrop').hidden = true;
   $('#sheetInput').hidden = true;
   $('#sheetInput').style.transform = '';
+  TX.edit = null;
+  TX.jenisAsli = '';
+  judulSheet('');
+  $('#txSave').textContent = 'Simpan';
+}
+
+/* judul sheet — kosong = formulir catat biasa (tanpa judul, seperti dulu) */
+function judulSheet(teks) {
+  const j = $('#txJudul');
+  if (!j) return;
+  j.textContent = teks || '';
+  j.hidden = !teks;
+}
+
+/* Buka formulir yang sama seperti mencatat, tapi sudah terisi data
+   transaksi lama. Semua isian bisa diubah: jenis, nominal, tanggal,
+   tempat, sumber dana, kategori, dan keterangan. */
+function bukaInputKoreksi(t) {
+  if (!t || t.reversal_dari || Store.sudahDikoreksi(t.id)) {
+    toast('Transaksi ini tidak bisa dikoreksi');
+    return;
+  }
+  bukaInput();
+
+  TX.edit = t.id;
+  TX.jenisAsli = t.jenis;
+  TX.akun_id = t.akun_id || '';
+  TX.akun_tujuan_id = t.akun_tujuan_id || '';
+  TX.kantong_id = t.kantong_id || '';
+  TX.kantong_tujuan_id = t.kantong_tujuan_id || '';
+  TX.kategori_id = t.kategori_id || '';
+
+  if (t.jenis === 'transfer_akun')          { TX.jenis = 'transfer'; TX.sub = 'akun'; }
+  else if (t.jenis === 'transfer_kantong')  { TX.jenis = 'transfer'; TX.sub = 'kantong'; }
+  else if (t.jenis === 'saldo_awal')        { TX.jenis = 'masuk';    TX.sub = 'akun'; }
+  else                                      { TX.jenis = t.jenis;    TX.sub = 'akun'; }
+
+  $$('#txJenis button').forEach(x => x.classList.toggle('active', x.dataset.j === TX.jenis));
+  tulisAngka($('#txNominal'), t.nominal);
+  $('#txKet').value = t.keterangan || '';
+  $('#txTgl').value = tglInput(t.timestamp);
+  judulSheet('Koreksi transaksi');
+  $('#txSave').textContent = 'Simpan koreksi';
+
+  renderTxRows();
+  setTimeout(() => $('#txNominal').focus(), 120);
 }
 
 /* Tarik ke bawah untuk menutup. Hanya dari gagang — kalau seluruh
@@ -1291,6 +1366,11 @@ function simpanTx() {
     if (!TX.kategori_id) return gagal('Pilih kategori dulu.');
     calon.jenis = TX.jenis;
     calon.kategori_id = TX.kategori_id;
+    /* saldo awal yang dikoreksi tetap saldo awal selama arahnya
+       tidak diubah pengguna — kalau tidak, angkanya pindah ke
+       laporan pemasukan dan arus kas bulan itu ikut melar. */
+    if (TX.edit && TX.jenisAsli === 'saldo_awal' && TX.jenis === 'masuk')
+      calon.jenis = 'saldo_awal';
 
   } else if (TX.sub === 'akun') {
     if (!TX.akun_tujuan_id) return gagal('Pilih tempat tujuan.');
@@ -1305,8 +1385,14 @@ function simpanTx() {
     calon.kantong_tujuan_id = TX.kantong_tujuan_id;
   }
 
-  /* peringatan saldo jebol — memberi tahu, bukan melarang */
-  const dampak = Calc.cekDampak(Store.db, calon);
+  /* peringatan saldo jebol — memberi tahu, bukan melarang.
+     Saat mengoreksi, baris lama akan dibalik, jadi dampaknya dihitung
+     terhadap data TANPA baris itu. Kalau tidak, memperbaiki salah ketik
+     nominal besar selalu memunculkan peringatan palsu. */
+  const dbUji = TX.edit
+    ? Object.assign({}, Store.db, { transaksi: Store.db.transaksi.filter(t => t.id !== TX.edit) })
+    : Store.db;
+  const dampak = Calc.cekDampak(dbUji, calon);
   if (dampak.length) {
     const d = dampak[0];
     const titipan = d.kantong && d.kantong.jenis === 'titipan';
@@ -1324,6 +1410,20 @@ function simpanTx() {
 }
 
 function finalTx(calon) {
+  if (TX.edit) {
+    const hasil = Store.koreksiTx(TX.edit, calon);
+    if (!hasil) {
+      const err = $('#txError');
+      err.textContent = 'Transaksi ini sudah dikoreksi di perangkat lain. Tutup lalu buka lagi.';
+      err.hidden = false;
+      return;
+    }
+    tutupInput();
+    segarkan();
+    toast('Koreksi tersimpan · ' + rp(calon.nominal));
+    return;
+  }
+
   Store.catat(calon);
 
   /* Baru sekarang pengingatnya dianggap terjawab. */

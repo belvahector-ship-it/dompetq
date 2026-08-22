@@ -29,7 +29,7 @@ const SKEMA_SHEET = {
   transaksi: ['id','timestamp','dibuat_pada','jenis','nominal',
               'akun_id','akun_tujuan_id','kantong_id','kantong_tujuan_id',
               'kategori_id','pihak_id','keterangan','bukti_url','bukti_thumb',
-              'reversal_dari'],
+              'reversal_dari','koreksi_dari'],
   pengingat: ['id','judul','arah','nominal','jadwal_tipe','jadwal_nilai',
               'akun_id','kantong_id','kategori_id','aktif',
               'terakhir_dipenuhi','ditunda_sampai']
