@@ -254,7 +254,15 @@ const Modal = {
       } else {
         inp = el('input', { type: m.tipe || 'text', placeholder: m.placeholder || '',
                             value: m.nilai || '', autocomplete:'off' });
-        if (m.tipe === 'angka') { inp.type = 'text'; inp.inputMode = 'numeric'; pasangFormatAngka(inp); }
+        /* Angka rupiah ditulis dengan pemisah ribuan sejak awal muncul.
+           Tanpa ini kolom saldo menampilkan 5250000 sementara seluruh
+           layar lain menulis Rp 5.250.000 — angka yang sama terbaca
+           seperti dua angka berbeda. */
+        if (m.tipe === 'angka') {
+          inp.type = 'text'; inp.inputMode = 'numeric';
+          pasangFormatAngka(inp);
+          tulisAngka(inp, Number(m.nilai) || 0);
+        }
         if (m.tipe === 'pin') {
           inp.type = 'password'; inp.inputMode = 'numeric';
           inp.maxLength = 8; inp.autocomplete = 'off';
@@ -283,9 +291,18 @@ const Modal = {
               nilai[m.nama] = m.tipe === 'angka' ? bacaAngka(inputs[m.nama])
                                                  : inputs[m.nama].value.trim();
             });
+            /* onSimpan boleh menjawab belakangan (mis. pencocokan PIN
+               yang memakai crypto.subtle). Dialog baru ditutup setelah
+               jawabannya ada — dulu jawaban 'PIN salah' datang ketika
+               dialognya sudah telanjur tertutup. */
+            const jawab = (salah) => {
+              if (salah) { err.textContent = salah; err.hidden = false; }
+              else Modal.tutup();
+            };
             const salah = onSimpan(nilai);
-            if (salah) { err.textContent = salah; err.hidden = false; }
-            else Modal.tutup();
+            if (salah && typeof salah.then === 'function')
+              salah.then(jawab).catch(e => jawab((e && e.message) || 'Gagal menyimpan.'));
+            else jawab(salah);
           }
         }
       ]

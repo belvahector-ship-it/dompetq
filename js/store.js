@@ -155,6 +155,11 @@ const Store = {
   },
 
   async _tulis() {
+    /* Penanda dinolkan DI SINI. Kalau tidak, id timer yang sudah
+       selesai tetap tersimpan dan flush() menganggap masih ada
+       tulisan tertunda — satu tulis lokal + satu kiriman ke Sheets
+       yang tidak perlu setiap kali aplikasi ke latar. */
+    this._pending = null;
     const ok = await this.adapter.simpan(this.db);
     this._lapor(ok);
     this._cerminkan();
@@ -428,7 +433,14 @@ const Store = {
     this.db = null;
   },
 
-  /* ── akun ── */
+  /* ── akun ──
+
+     Menghapus master data hanya boleh kalau BELUM dipakai — bukan
+     cuma oleh transaksi, tapi juga oleh pengingat. Pengingat menyimpan
+     akun_id/kantong_id/kategori_id di dalamnya; kalau yang ditunjuk
+     hilang, "Catat" dari pengingat itu menghasilkan transaksi yang
+     menunjuk data hantu: tidak terhitung di saldo rekening mana pun
+     dan muncul sebagai "Tanpa kategori" di laporan. */
   tambahAkun({ nama, bank_kode, jenis }) {
     const a = {
       id: uid('akn'), nama, bank_kode: bank_kode || '',
@@ -442,6 +454,8 @@ const Store = {
     const dipakai = this.db.transaksi.some(
       t => t.akun_id === id || t.akun_tujuan_id === id);
     if (dipakai) return { ok:false, alasan:'terpakai' };
+    if ((this.db.pengingat || []).some(p => p.akun_id === id))
+      return { ok:false, alasan:'pengingat' };
     this.db.akun = this.db.akun.filter(a => a.id !== id);
     if (this.db.akun.length && !this.db.akun.some(a => a.is_default))
       this.db.akun[0].is_default = true;
@@ -462,6 +476,8 @@ const Store = {
     const dipakai = this.db.transaksi.some(
       t => t.kantong_id === id || t.kantong_tujuan_id === id);
     if (dipakai) return { ok:false, alasan:'terpakai' };
+    if ((this.db.pengingat || []).some(p => p.kantong_id === id))
+      return { ok:false, alasan:'pengingat' };
     this.db.kantong = this.db.kantong.filter(k => k.id !== id);
     /* Default HARUS jatuh ke dana milik sendiri. Kalau default berpindah
        ke kantong titipan, tiap pencatatan cepat akan salah kantong dan
@@ -484,6 +500,8 @@ const Store = {
   hapusKategori(id) {
     const dipakai = this.db.transaksi.some(t => t.kategori_id === id);
     if (dipakai) return { ok:false, alasan:'terpakai' };
+    if ((this.db.pengingat || []).some(p => p.kategori_id === id))
+      return { ok:false, alasan:'pengingat' };
     this.db.kategori = this.db.kategori.filter(k => k.id !== id);
     this.simpan(); return { ok:true };
   },

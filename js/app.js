@@ -1350,6 +1350,15 @@ function simpanTx() {
   if (nominal <= 0) return gagal('Nominal belum diisi.');
   if (!TX.akun_id) return gagal('Pilih tempat uangnya dulu.');
 
+  /* Yang diperiksa adalah OBJEKNYA, bukan id-nya terisi atau tidak.
+     Id bisa menunjuk rekening/sumber dana/kategori yang sudah tidak
+     ada — misalnya dari pengingat lama. Transaksi seperti itu
+     tersimpan diam-diam lalu tidak muncul di kartu rekening mana pun. */
+  if (!Store.akun(TX.akun_id))
+    return gagal('Tempat uangnya sudah tidak ada. Pilih ulang.');
+  if (!Store.modeSederhana() && TX.kantong_id && !Store.kantong(TX.kantong_id))
+    return gagal('Sumber dananya sudah tidak ada. Pilih ulang.');
+
   const tgl = $('#txTgl').value;
   const kini = new Date();
   const stamp = tgl
@@ -1363,7 +1372,8 @@ function simpanTx() {
   };
 
   if (TX.jenis === 'keluar' || TX.jenis === 'masuk') {
-    if (!TX.kategori_id) return gagal('Pilih kategori dulu.');
+    if (!TX.kategori_id || !Store.kategori(TX.kategori_id))
+      return gagal('Pilih kategori dulu.');
     calon.jenis = TX.jenis;
     calon.kategori_id = TX.kategori_id;
     /* saldo awal yang dikoreksi tetap saldo awal selama arahnya
@@ -1373,13 +1383,15 @@ function simpanTx() {
       calon.jenis = 'saldo_awal';
 
   } else if (TX.sub === 'akun') {
-    if (!TX.akun_tujuan_id) return gagal('Pilih tempat tujuan.');
+    if (!TX.akun_tujuan_id || !Store.akun(TX.akun_tujuan_id))
+      return gagal('Pilih tempat tujuan.');
     if (TX.akun_tujuan_id === TX.akun_id) return gagal('Tempat asal dan tujuan tidak boleh sama.');
     calon.jenis = 'transfer_akun';
     calon.akun_tujuan_id = TX.akun_tujuan_id;
 
   } else {
-    if (!TX.kantong_tujuan_id) return gagal('Pilih sumber dana tujuan.');
+    if (!TX.kantong_tujuan_id || !Store.kantong(TX.kantong_tujuan_id))
+      return gagal('Pilih sumber dana tujuan.');
     if (TX.kantong_tujuan_id === TX.kantong_id) return gagal('Sumber dana asal dan tujuan tidak boleh sama.');
     calon.jenis = 'transfer_kantong';
     calon.kantong_tujuan_id = TX.kantong_tujuan_id;
@@ -1396,11 +1408,17 @@ function simpanTx() {
   if (dampak.length) {
     const d = dampak[0];
     const titipan = d.kantong && d.kantong.jenis === 'titipan';
+    /* Namanya diambil lewat penjaga. Kalimat peringatan ini pernah
+       membuat tombol Simpan mati total tanpa pesan apa pun: rujukannya
+       kosong, dan menyusun kalimatnya melempar galat sebelum sempat
+       ditampilkan. */
+    const namaAkun = (d.akun && d.akun.nama) || 'tempat itu';
+    const namaKantong = (d.kantong && d.kantong.nama) || 'Saldo';
     Modal.konfirmasi({
       judul: titipan ? 'Ini uang titipan' : 'Saldo jadi minus',
       pesan: titipan
-        ? `${d.kantong.nama} di ${d.akun.nama} akan jadi ${rp(d.sesudah)}. Artinya uang orang lain terpakai. Tetap catat?`
-        : `${d.kantong ? d.kantong.nama : 'Saldo'} di ${d.akun.nama} akan jadi ${rp(d.sesudah)}. Mungkin ada transaksi yang belum dicatat. Tetap simpan?`,
+        ? `${namaKantong} di ${namaAkun} akan jadi ${rp(d.sesudah)}. Artinya uang orang lain terpakai. Tetap catat?`
+        : `${namaKantong} di ${namaAkun} akan jadi ${rp(d.sesudah)}. Mungkin ada transaksi yang belum dicatat. Tetap simpan?`,
       labelYa:'Tetap catat', gayaYa:'btn-primary',
       onYa: () => finalTx(calon)
     });
@@ -1539,12 +1557,17 @@ function renderTransaksi() {
   if (fk.value) daftar = daftar.filter(t =>
     t.kantong_id === fk.value || t.kantong_tujuan_id === fk.value);
 
-  if (cari) daftar = daftar.filter(t => {
-    const k = Store.kategori(t.kategori_id);
-    return (t.keterangan || '').toLowerCase().includes(cari) ||
-           (k && k.nama.toLowerCase().includes(cari)) ||
-           String(t.nominal).includes(cari);
-  });
+  if (cari) {
+    /* "100.000", "100000", dan "Rp 100.000" harus sama-sama ketemu —
+       yang diketik orang adalah angka yang dilihatnya di layar. */
+    const angka = cari.replace(/\D/g, '');
+    daftar = daftar.filter(t => {
+      const k = Store.kategori(t.kategori_id);
+      return (t.keterangan || '').toLowerCase().includes(cari) ||
+             (k && k.nama.toLowerCase().includes(cari)) ||
+             (!!angka && String(t.nominal).includes(angka));
+    });
+  }
 
   const w = kosong($('#txList'));
   if (!daftar.length) {
@@ -1610,7 +1633,11 @@ function renderLaporan() {
   const { dari, sampai } = rentangPeriode();
   const sederhana = Store.modeSederhana();
 
-  const kas = Calc.arusKas(db, dari, sampai, !sederhana);
+  /* Menghitung SEMUA dana, titipan sekalian. Sebelumnya statistik
+     hanya menghitung dana milik sendiri sementara grafik di bawahnya
+     menghitung semuanya — satu layar bisa menampilkan "Pengeluaran
+     Rp 0" tepat di atas batang "Makan Rp 100.000". */
+  const kas = Calc.arusKas(db, dari, sampai, false);
   const r = Calc.ringkas(db);
 
   const ws = kosong($('#lapStat'));
@@ -2092,7 +2119,7 @@ function renderProfil() {
       ]),
       el('button', { class:'mg-act', onclick: () => {
         const h = Store.hapusKategori(k.id);
-        if (!h.ok) toast('Sudah dipakai transaksi, tidak bisa dihapus');
+        if (!h.ok) toast(pesanTakBisaHapus(h.alasan));
         else renderProfil();
       }}, 'Hapus')
     ]));
@@ -2191,7 +2218,11 @@ function dialogPengingat(ada) {
         /* jenis diganti di tengah → bangun ulang supaya daftar
            kategorinya ikut berganti, jangan simpan kategori
            dari jenis yang salah */
-        if (v.arah !== arah) { bangun(v.arah); return null; }
+        /* Dibangun ulang SESUDAH modal ini ditutup. Modal.form menutup
+           dialog begitu onSimpan menjawab kosong — memanggil bangun()
+           di sini membuat form penggantinya ikut tertutup seketika,
+           dan tidak ada yang tersimpan tanpa satu pun pesan. */
+        if (v.arah !== arah) { setTimeout(() => bangun(v.arah), 0); return null; }
 
         if (v.jadwal_tipe === 'bulanan' && (v.jadwal_nilai < 1 || v.jadwal_nilai > 31))
           return 'Tanggal harus antara 1 sampai 31.';
@@ -2298,9 +2329,12 @@ function bukaInputDariPengingat(p, tanggal, jatuhStr) {
   bukaInput();
   TX.pengingat = { id: p.id, jatuhStr: jatuhStr || tglInput(tanggal) };
   TX.jenis = p.arah;
-  TX.akun_id = p.akun_id || (Store.akunDefault() || {}).id;
-  TX.kantong_id = p.kantong_id || (Store.kantongDefault() || {}).id;
-  TX.kategori_id = p.kategori_id;
+  /* Rujukan pengingat bisa sudah tidak ada — dibuat lama, lalu
+     rekening atau sumber dananya dihapus. Dijatuhkan ke bawaan supaya
+     formulirnya tetap bisa dipakai, bukan tersimpan menunjuk hantu. */
+  TX.akun_id = (Store.akun(p.akun_id) || Store.akunDefault() || {}).id;
+  TX.kantong_id = (Store.kantong(p.kantong_id) || Store.kantongDefault() || {}).id;
+  TX.kategori_id = Store.kategori(p.kategori_id) ? p.kategori_id : '';
 
   $$('#txJenis button').forEach(x => x.classList.toggle('active', x.dataset.j === p.arah));
   if (p.nominal) tulisAngka($('#txNominal'), p.nominal);
@@ -2387,25 +2421,76 @@ function dialogAturTitipan() {
         if (r.totalFisik - totalBaru() < 0) { toast('Masih melebihi total uang yang ada'); return; }
         if (!pribadi) { toast('Tidak ada sumber dana milik sendiri'); return; }
 
-        let jumlahUbah = 0;
-        titipan.forEach(k => {
-          const target = bacaAngka(isian[k.id]);
-          const kini = r.saldoKantong[k.id] || 0;
-          const beda = target - kini;
-          if (beda === 0) return;
+        /* Salinan matriks yang IKUT BERUBAH selama penyesuaian berjalan.
 
-          /* pilih tempat yang saldo sumber asalnya paling besar,
-             supaya perpindahan tidak membuat sel jadi minus */
-          const asal = beda > 0 ? pribadi.id : k.id;
-          const tujuan = beda > 0 ? k.id : pribadi.id;
-          const akunId = akunTerbanyak(r.matriks, asal, db);
+           Dulu tiap perpindahan memilih tempat dari matriks yang sama
+           dan sudah basi, lalu memindahkan seluruh jumlahnya dari satu
+           tempat saja. Dua dana titipan yang sama-sama diambil dari
+           uang pribadi jadi menunjuk rekening yang sama, dan sel
+           matriksnya jebol minus tanpa satu pun peringatan — rekening
+           berisi 600rb bisa mengaku menyimpan dua titipan @500rb. */
+        const mx = JSON.parse(JSON.stringify(r.matriks));
+        const sel = (ak, kt) => (mx[ak] && mx[ak][kt]) || 0;
+        const geser = (ak, kt, n) => {
+          if (!mx[ak]) mx[ak] = {};
+          mx[ak][kt] = sel(ak, kt) + n;
+        };
 
-          Store.catat({
-            jenis:'transfer_kantong', nominal: Math.abs(beda),
-            akun_id: akunId, kantong_id: asal, kantong_tujuan_id: tujuan,
-            keterangan: 'Penyesuaian dana titipan — ' + k.nama
+        /* Satu perpindahan dipecah ke beberapa tempat kalau memang
+           uangnya tersebar — mengikuti isi sebenarnya, dari yang
+           paling banyak. */
+        const pindahkan = (asal, tujuan, jumlah, nama) => {
+          const urut = db.akun.filter(a => a.aktif)
+            .sort((x, y) => sel(y.id, asal) - sel(x.id, asal));
+          let sisa = jumlah, n = 0;
+
+          urut.forEach(a => {
+            if (sisa <= 0) return;
+            const ada = sel(a.id, asal);
+            if (ada <= 0) return;
+            const ambil = Math.min(sisa, ada);
+            geser(a.id, asal, -ambil);
+            geser(a.id, tujuan, ambil);
+            sisa -= ambil;
+            n++;
+            Store.catat({
+              jenis:'transfer_kantong', nominal: ambil,
+              akun_id: a.id, kantong_id: asal, kantong_tujuan_id: tujuan,
+              keterangan: 'Penyesuaian dana titipan — ' + nama
+            });
           });
-          jumlahUbah++;
+
+          /* Tidak cukup di mana pun. Sisanya tetap dicatat di tempat
+             dengan isi terbanyak supaya angkanya jujur dan minusnya
+             terlihat, bukan diam-diam dibuang. */
+          if (sisa > 0) {
+            const a = urut[0] || db.akun[0];
+            if (a) {
+              geser(a.id, asal, -sisa);
+              geser(a.id, tujuan, sisa);
+              n++;
+              Store.catat({
+                jenis:'transfer_kantong', nominal: sisa,
+                akun_id: a.id, kantong_id: asal, kantong_tujuan_id: tujuan,
+                keterangan: 'Penyesuaian dana titipan — ' + nama
+              });
+            }
+          }
+          return n;
+        };
+
+        const beda = k => bacaAngka(isian[k.id]) - (r.saldoKantong[k.id] || 0);
+
+        /* Yang BERKURANG dikerjakan lebih dulu: uangnya kembali ke
+           dana pribadi dan langsung bisa dipakai oleh titipan yang
+           bertambah. Urutan terbalik membuat penyesuaian yang
+           sebenarnya pas jadi terlihat kurang. */
+        let jumlahUbah = 0;
+        titipan.filter(k => beda(k) < 0).forEach(k => {
+          jumlahUbah += pindahkan(k.id, pribadi.id, -beda(k), k.nama) ? 1 : 0;
+        });
+        titipan.filter(k => beda(k) > 0).forEach(k => {
+          jumlahUbah += pindahkan(pribadi.id, k.id, beda(k), k.nama) ? 1 : 0;
         });
 
         Modal.tutup();
@@ -2414,16 +2499,6 @@ function dialogAturTitipan() {
       }}
     ]
   });
-}
-
-/* akun yang menyimpan paling banyak dari sebuah sumber dana */
-function akunTerbanyak(matriks, kantongId, db) {
-  let terbaik = null, tertinggi = -Infinity;
-  db.akun.forEach(a => {
-    const n = (matriks[a.id] && matriks[a.id][kantongId]) || 0;
-    if (n > tertinggi) { tertinggi = n; terbaik = a.id; }
-  });
-  return terbaik || (Store.akunDefault() || {}).id;
 }
 
 /* ── kunci saldo ── */
@@ -2489,15 +2564,22 @@ function mintaPin(judul, aksi) {
     labelSimpan:'Lanjut',
     onSimpan: v => {
       if (!v.pin) return 'PIN belum diisi.';
-      const hasil = aksi(v.pin);
-      /* aksi boleh async — modal ditutup sendiri lewat renderProfil */
-      if (hasil && typeof hasil.then === 'function') {
-        hasil.then(pesan => { if (pesan) toast(pesan); });
-        return null;
-      }
-      return hasil;
+      /* Jawaban aksi diteruskan apa adanya, termasuk kalau berupa
+         janji. Modal.form yang menunggu — dulu jawaban "PIN salah"
+         datang ketika dialognya sudah telanjur tertutup, jadi
+         pengguna harus membuka menunya lagi untuk mencoba ulang. */
+      return aksi(v.pin);
     }
   });
+}
+
+/* Sebab penolakan disebutkan apa adanya. "Sudah dipakai transaksi"
+   untuk sesuatu yang sebenarnya dipakai pengingat membuat pengguna
+   mencari-cari transaksi yang tidak pernah ada. */
+function pesanTakBisaHapus(alasan) {
+  return alasan === 'pengingat'
+    ? 'Masih dipakai pengingat. Hapus atau ubah pengingatnya dulu.'
+    : 'Sudah dipakai transaksi, tidak bisa dihapus';
 }
 
 function ubahAkun(a) {
@@ -2539,7 +2621,7 @@ function ubahAkun(a) {
       class:'btn btn-danger-ghost', style:'margin:0',
       onclick: () => {
         const h = Store.hapusAkun(a.id);
-        if (!h.ok) toast('Sudah dipakai transaksi, tidak bisa dihapus');
+        if (!h.ok) toast(pesanTakBisaHapus(h.alasan));
         else { Modal.tutup(); renderProfil(); }
       }
     }, 'Hapus'), $('#modalActions').firstChild);
@@ -2579,7 +2661,7 @@ function ubahKantong(k) {
       class:'btn btn-danger-ghost', style:'margin:0',
       onclick: () => {
         const h = Store.hapusKantong(k.id);
-        if (!h.ok) toast('Sudah dipakai transaksi, tidak bisa dihapus');
+        if (!h.ok) toast(pesanTakBisaHapus(h.alasan));
         else { Modal.tutup(); renderProfil(); }
       }
     }, 'Hapus'), $('#modalActions').firstChild);
