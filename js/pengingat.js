@@ -75,6 +75,44 @@ const Pengingat = {
     return bulanIni > h ? bulanIni : diBulan(h.getFullYear(), h.getMonth() + 1);
   },
 
+  /* Satu periode SESUDAH sebuah tanggal jatuh tempo.
+     Dipakai untuk melewati periode yang sudah dibayar di muka. */
+  majuPeriode(p, dari) {
+    const d = new Date(dari);
+
+    if (p.jadwal_tipe === 'harian')
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+
+    if (p.jadwal_tipe === 'mingguan')
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7);
+
+    const hariTarget = Math.min(Math.max(Number(p.jadwal_nilai) || 1, 1), 31);
+    const thn = d.getFullYear(), bln = d.getMonth() + 1;
+    const akhir = new Date(thn, bln + 1, 0).getDate();
+    return new Date(thn, bln, Math.min(hariTarget, akhir));
+  },
+
+  /* Jatuh tempo terdekat yang BELUM dibayar.
+
+     Cicilan sering dibayar sebelum tanggalnya. Tanpa ini, periode yang
+     sudah dilunasi tetap tampil sebagai "minggu depan" seolah belum
+     dibayar, dan pengguna membayar dua kali atau berhenti percaya pada
+     panelnya. Mengembalikan juga penanda apakah periode terdekat
+     memang sudah dilunasi di muka. */
+  jatuhBerikutBelumDibayar(p, kini) {
+    let jatuh = this.jatuhBerikut(p, kini);
+    let dibayarDimuka = false;
+
+    /* Dibatasi supaya jadwal harian dengan tanda jauh di depan tidak
+       membuat perulangan ini berjalan ribuan kali. */
+    for (let i = 0; i < 60; i++) {
+      if (!p.terakhir_dipenuhi || p.terakhir_dipenuhi < tglInput(jatuh)) break;
+      dibayarDimuka = true;
+      jatuh = this.majuPeriode(p, jatuh);
+    }
+    return { jatuh, dibayarDimuka };
+  },
+
   /* ── mana yang perlu ditanyakan sekarang ── */
   perluDitanya(db, kini) {
     kini = kini || new Date();
@@ -109,6 +147,18 @@ const Pengingat = {
     const besok = new Date();
     besok.setDate(besok.getDate() + 1);
     p.ditunda_sampai = tglInput(besok);
+    Store.simpan();
+  },
+
+  /* Membatalkan tanda "sudah dibayar di muka".
+
+     Yang dilepas HANYA pembayaran di depan; periode-periode yang sudah
+     lewat tetap dianggap terjawab. Mengosongkan penandanya sama sekali
+     akan membangunkan lagi seluruh periode lama yang sebenarnya sudah
+     beres, dan pengguna dihujani pertanyaan yang tidak ia buat. */
+  batalDimuka(p, kini) {
+    p.terakhir_dipenuhi = tglInput(this.jatuhTerakhir(p, kini || new Date()));
+    p.ditunda_sampai = '';
     Store.simpan();
   },
 
@@ -150,8 +200,9 @@ const Pengingat = {
     return (db.pengingat || [])
       .filter(p => p.aktif && !menunggu.has(p.id))
       .map(p => {
-        const jatuh = this.jatuhBerikut(p, kini);
-        return { p, jatuh, sisa: Math.round((jatuh - hariIni) / 864e5) };
+        const { jatuh, dibayarDimuka } = this.jatuhBerikutBelumDibayar(p, kini);
+        return { p, jatuh, dibayarDimuka,
+                 sisa: Math.round((jatuh - hariIni) / 864e5) };
       })
       .sort((a, b) => a.sisa - b.sisa);
   },

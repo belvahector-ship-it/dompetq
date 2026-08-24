@@ -922,14 +922,85 @@ function renderPengingatBeranda() {
   /* Tiga saja. Sisanya ada di Profil — beranda tidak boleh berubah
      jadi daftar jadwal. */
   nanti.slice(0, jatuh.length ? 1 : 3).forEach(item => {
-    w.appendChild(el('div', { class:'igt-nanti' }, [
-      el('div', { class:'igt-titik ' + (item.p.arah === 'masuk' ? 'masuk' : 'keluar') }),
-      el('div', { class:'igt-nanti-body' }, [
-        el('b', null, item.p.judul),
-        el('small', null, Pengingat.teksSisa(item.sisa) +
-          (item.p.nominal ? ' · ' + rp(item.p.nominal) : ''))
-      ])
-    ]));
+    w.appendChild(barisPengingatNanti(item));
+  });
+}
+
+/* ── baris pengingat yang belum jatuh tempo ──
+
+   Dulu baris ini cuma kabar: tidak bisa disentuh. Padahal cicilan
+   justru sering dibayar SEBELUM tanggalnya — begitu tagihannya sampai,
+   bukan begitu jatuh temponya tiba. Tanpa jalan mencatatnya di sini,
+   pembayaran itu masuk sebagai pengeluaran biasa dan pengingatnya
+   tetap bertanya di tanggal jatuh tempo, menanyakan sesuatu yang sudah
+   dibayar seminggu sebelumnya.
+
+   Tombolnya sengaja kecil dan tanpa warna: barisnya tetap kabar,
+   bukan ajakan. */
+function barisPengingatNanti(item) {
+  const p = item.p;
+  const lunas = item.dibayarDimuka;
+
+  const ket = lunas
+    ? 'Sudah dicatat · berikutnya ' + tglSingkat(item.jatuh)
+    : Pengingat.teksSisa(item.sisa) + (p.nominal ? ' · ' + rp(p.nominal) : '');
+
+  /* Tombol mencatat SELALU ada, juga pada baris yang sudah lunas —
+     item.jatuh di situ sudah menunjuk periode berikutnya yang belum
+     dibayar. Melunasi dua bulan sekaligus adalah hal biasa, dan tanpa
+     ini pengguna harus membatalkan tandanya dulu hanya untuk bisa
+     membayar lagi. */
+  const aksi = el('div', { class:'igt-nanti-aksi-wrap' });
+  if (lunas) {
+    aksi.appendChild(el('button', {
+      class:'igt-nanti-aksi batal',
+      onclick: () => batalPengingatDimuka(item)
+    }, 'Batal'));
+  }
+  aksi.appendChild(el('button', {
+    class:'igt-nanti-aksi',
+    onclick: () => catatPengingatDimuka(item)
+  }, p.arah === 'masuk' ? 'Terima' : 'Bayar'));
+
+  return el('div', { class:'igt-nanti' + (lunas ? ' lunas' : '') }, [
+    lunas
+      ? el('div', { class:'igt-lunas-ikon', html: svgIkon('cek', 13) })
+      : el('div', { class:'igt-titik ' + (p.arah === 'masuk' ? 'masuk' : 'keluar') }),
+    el('div', { class:'igt-nanti-body' }, [
+      el('b', null, p.judul),
+      el('small', null, ket)
+    ]),
+    aksi
+  ]);
+}
+
+/* Mencatat pembayaran untuk periode yang BELUM jatuh tempo.
+
+   Dua tanggal yang berbeda, dan bedanya penting:
+     tanggal transaksi — hari ini, karena uangnya keluar hari ini
+     periode yang ditandai — jatuh tempo mendatang yang dilunasi
+   Kalau keduanya disamakan, transaksinya tercatat di masa depan dan
+   saldo bulan ini terlihat lebih besar dari kenyataan. */
+function catatPengingatDimuka(item) {
+  const p = item.p;
+  bukaInputDariPengingat(p, new Date(), tglInput(item.jatuh));
+
+  /* Jatuh temponya disebutkan di dalam formulir — lewat TX, bukan
+     ditempel langsung ke DOM. renderTxRows menggambar ulang isinya
+     tiap kali jenis atau pilihan berubah, jadi catatan yang ditempel
+     akan hilang pada sentuhan pertama. */
+  TX.pengingat.dimuka = tglPanjang(item.jatuh);
+  renderTxRows();
+}
+
+function batalPengingatDimuka(item) {
+  Modal.konfirmasi({
+    judul: 'Batalkan tanda sudah dibayar?',
+    pesan: 'Pengingat "' + item.p.judul + '" akan bertanya lagi pada jatuh tempo terdekat. ' +
+           'Transaksi yang sudah kamu catat TIDAK ikut terhapus — kalau memang salah catat, ' +
+           'koreksi transaksinya lewat tab Transaksi.',
+    labelYa: 'Ya, batalkan', gayaYa: 'btn-primary',
+    onYa: () => { Pengingat.batalDimuka(item.p); segarkan(); toast('Tanda dilepas'); }
   });
 }
 
@@ -1338,6 +1409,14 @@ function renderTxRows() {
     w.appendChild(pickRow('Ke sumber dana', b.nama, 'Pilih', pilihKantong('kantong_tujuan_id', 'Ke sumber dana mana?'), b.warna));
     w.appendChild(el('p', { class:'fineprint', style:'margin:2px 0 0' },
       'Mis. menutup kas pakai uang pribadi. Uang tetap di tempat yang sama, hanya kepemilikannya berpindah.'));
+  }
+
+  /* Pembayaran di muka: periode yang dilunasi berbeda dari tanggal
+     transaksinya, dan bedanya harus terbaca sebelum menekan simpan. */
+  if (TX.pengingat && TX.pengingat.dimuka) {
+    w.appendChild(el('p', { class:'fineprint', style:'margin:2px 0 0' },
+      'Untuk jatuh tempo ' + TX.pengingat.dimuka +
+      '. Tanggal di bawah tetap hari uangnya benar-benar berpindah.'));
   }
 }
 
@@ -2340,6 +2419,13 @@ function bukaInputDariPengingat(p, tanggal, jatuhStr) {
   if (p.nominal) tulisAngka($('#txNominal'), p.nominal);
   $('#txKet').value = p.judul;
   $('#txTgl').value = tglInput(tanggal);
+
+  /* Formulirnya diberi nama pengingatnya. Isinya sudah terisi sendiri,
+     dan tanpa judul tidak ada yang memberi tahu SEDANG MENJAWAB APA —
+     terutama kalau yang jatuh tempo lebih dari satu. */
+  judulSheet(p.judul);
+  $('#txSave').textContent = p.arah === 'masuk' ? 'Catat penerimaan' : 'Catat pembayaran';
+
   renderTxRows();
 }
 

@@ -55,6 +55,12 @@ function tglPanjang(d) {
   return x.getDate() + ' ' + BULAN[x.getMonth()] + ' ' + x.getFullYear();
 }
 
+/* "1 Okt 2026" — untuk baris sempit yang sudah berisi tombol. */
+function tglSingkat(d) {
+  const x = new Date(d);
+  return x.getDate() + ' ' + BULAN[x.getMonth()].slice(0, 3) + ' ' + x.getFullYear();
+}
+
 function tglRelatif(d) {
   const x = new Date(d), n = new Date();
   const hari = Math.floor((new Date(n.getFullYear(), n.getMonth(), n.getDate()) -
