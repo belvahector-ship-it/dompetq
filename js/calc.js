@@ -128,6 +128,25 @@ const Calc = {
     return out;
   },
 
+  /* Rekening lain yang masih punya saldo di sumber dana yang sama —
+     dipakai saat pengeluaran tidak cukup di satu rekening, supaya bisa
+     ditawarkan "pisah dari rekening lain" dari pada ditolak total.
+     Diurutkan dari saldo terbesar supaya pembagian otomatisnya hemat
+     jumlah rekening yang dipakai. */
+  sumberLain(db, kantongId, kecualiAkunId) {
+    const m = this.matriks(db);
+    const out = [];
+    for (const ak in m) {
+      if (ak === kecualiAkunId) continue;
+      const v = m[ak][kantongId] || 0;
+      if (v > 0) {
+        const akun = db.akun.find(a => a.id === ak);
+        if (akun) out.push({ akun, nilai: v });
+      }
+    }
+    return out.sort((a, b) => b.nilai - a.nilai);
+  },
+
   /* ID transaksi yang harus dikecualikan dari laporan: transaksi yang
      sudah dikoreksi, beserta entri pembaliknya. Keduanya saling meniadakan.
 

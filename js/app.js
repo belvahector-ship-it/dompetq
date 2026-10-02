@@ -1491,9 +1491,131 @@ function simpanTx() {
        melempar galat sebelum sempat ditampilkan. */
     const namaAkun = (d.akun && d.akun.nama) || 'tempat itu';
     const namaKantong = (d.kantong && d.kantong.nama) || 'Saldo';
+
+    /* Pengeluaran baru (bukan transfer, bukan sedang mengoreksi) masih
+       mungkin tertolong: sumber dana yang sama bisa saja masih ada di
+       rekening lain. Tawarkan pisah dulu sebelum menolak total —
+       dari pada memaksa pengguna mencatatnya manual jadi dua baris. */
+    if (calon.jenis === 'keluar' && !TX.edit && d.akun && d.kantong) {
+      const tersediaUtama = Math.max(0, d.sesudah + nominal);
+      const kurang = nominal - tersediaUtama;
+      const lain = Calc.sumberLain(dbUji, calon.kantong_id, calon.akun_id);
+      const totalLain = lain.reduce((s, x) => s + x.nilai, 0);
+
+      if (totalLain >= kurang) {
+        return bukaPisahRekening(calon, {
+          namaKantong, namaAkunUtama: namaAkun, tersediaUtama, kurang, lain
+        });
+      }
+      return gagal(`${namaKantong} di semua rekening cuma ${rp(tersediaUtama + totalLain)}, ` +
+                   `kurang ${rp(nominal - tersediaUtama - totalLain)} dari ${rp(nominal)}.`);
+    }
+
     return gagal(`${namaKantong} di ${namaAkun} tidak cukup untuk ini. Saldo akan jadi ${rp(d.sesudah)}.`);
   }
   finalTx(calon);
+}
+
+/* Dialog pisah rekening: pengeluaran lebih besar dari saldo satu rekening,
+   tapi sumber dana yang sama masih ada di rekening lain. Baris utama
+   (sampai batas tersedia) otomatis, sisanya diisi pengguna per rekening,
+   diprefill rakus dari saldo terbesar supaya biasanya tinggal konfirmasi. */
+function bukaPisahRekening(calon, info) {
+  const { namaKantong, namaAkunUtama, tersediaUtama, kurang, lain } = info;
+  const wrap = el('div');
+
+  wrap.appendChild(el('p', { class:'muted', style:'margin:0 0 12px' },
+    `${namaKantong} di ${namaAkunUtama} cuma cukup ${rp(tersediaUtama)} dari ${rp(calon.nominal)}. ` +
+    `Pisahkan sisanya ${rp(kurang)} dari rekening lain:`));
+
+  const baris = [];
+  let sisaPrefill = kurang;
+  lain.forEach(s => {
+    const ambil = Math.min(s.nilai, sisaPrefill);
+    sisaPrefill -= ambil;
+
+    const lbl = el('label', { class:'field' });
+    lbl.appendChild(el('span', null, `${s.akun.nama} (tersedia ${rp(s.nilai)})`));
+    const inp = el('input', { type:'text', inputMode:'numeric', autocomplete:'off' });
+    pasangFormatAngka(inp);
+    tulisAngka(inp, ambil);
+    lbl.appendChild(inp);
+    wrap.appendChild(lbl);
+    baris.push({ akun: s.akun, maksimal: s.nilai, input: inp });
+  });
+
+  const sisaEl = el('p', { class:'muted', style:'margin:8px 0 0;font-weight:600' });
+  wrap.appendChild(sisaEl);
+
+  const hitungSisa = () => {
+    const total = baris.reduce((s, b) => s + bacaAngka(b.input), 0);
+    const sisa = kurang - total;
+    sisaEl.textContent = sisa === 0 ? 'Pas — siap disimpan.'
+      : sisa > 0 ? `Masih kurang ${rp(sisa)}.` : `Kelebihan ${rp(-sisa)}.`;
+    sisaEl.style.color = sisa === 0 ? '#1a7a4c' : '#c0392b';
+    return sisa;
+  };
+  baris.forEach(b => b.input.addEventListener('input', hitungSisa));
+  hitungSisa();
+
+  const err = el('div', { class:'err', hidden:'' });
+  wrap.appendChild(err);
+
+  Modal.buka({
+    judul: 'Saldo kurang di ' + namaAkunUtama,
+    isi: wrap,
+    aksi: [
+      { label:'Batal' },
+      {
+        label:'Simpan', gaya:'btn-primary', tutup:false,
+        aksi: () => {
+          for (const b of baris) {
+            if (bacaAngka(b.input) > b.maksimal) {
+              err.textContent = `${b.akun.nama} cuma punya ${rp(b.maksimal)}.`;
+              err.hidden = false;
+              return;
+            }
+          }
+          const sisa = hitungSisa();
+          if (sisa !== 0) {
+            err.textContent = sisa > 0 ? `Masih kurang ${rp(sisa)} lagi.` : `Kelebihan ${rp(-sisa)}, kurangi dulu.`;
+            err.hidden = false;
+            return;
+          }
+
+          const legs = [];
+          if (tersediaUtama > 0) legs.push(Object.assign({}, calon, { nominal: tersediaUtama }));
+          baris.forEach(b => {
+            const n = bacaAngka(b.input);
+            if (n > 0) legs.push(Object.assign({}, calon, { akun_id: b.akun.id, nominal: n }));
+          });
+
+          Modal.tutup();
+          finalTxTerpisah(legs);
+        }
+      }
+    ]
+  });
+}
+
+/* Simpan beberapa baris 'keluar' sekaligus — hasil dari dialog pisah
+   rekening. Sama seperti finalTx, tapi tidak pernah untuk TX.edit:
+   koreksi transaksi yang sudah dipisah tetap ditangani satu per satu. */
+function finalTxTerpisah(legs) {
+  legs.forEach(l => Store.catat(l));
+
+  if (TX.pengingat) {
+    const p = (Store.db.pengingat || []).find(x => x.id === TX.pengingat.id);
+    if (p) Pengingat.tandaiTerpenuhi(p, TX.pengingat.jatuhStr);
+    TX.pengingat = null;
+  }
+
+  tutupInput();
+  segarkan();
+  const total = legs.reduce((s, l) => s + l.nominal, 0);
+  toast(`Tercatat dari ${legs.length} rekening · ${rp(total)}`);
+
+  if (antreanPengingat.length) setTimeout(tanyaBerikutnya, 400);
 }
 
 function finalTx(calon) {
