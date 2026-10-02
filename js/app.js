@@ -1476,32 +1476,22 @@ function simpanTx() {
     calon.kantong_tujuan_id = TX.kantong_tujuan_id;
   }
 
-  /* peringatan saldo jebol — memberi tahu, bukan melarang.
+  /* saldo tidak boleh minus — ditolak, bukan sekadar diperingatkan.
      Saat mengoreksi, baris lama akan dibalik, jadi dampaknya dihitung
      terhadap data TANPA baris itu. Kalau tidak, memperbaiki salah ketik
-     nominal besar selalu memunculkan peringatan palsu. */
+     nominal besar selalu memunculkan tolakan palsu. */
   const dbUji = TX.edit
     ? Object.assign({}, Store.db, { transaksi: Store.db.transaksi.filter(t => t.id !== TX.edit) })
     : Store.db;
   const dampak = Calc.cekDampak(dbUji, calon);
   if (dampak.length) {
     const d = dampak[0];
-    const titipan = d.kantong && d.kantong.jenis === 'titipan';
-    /* Namanya diambil lewat penjaga. Kalimat peringatan ini pernah
-       membuat tombol Simpan mati total tanpa pesan apa pun: rujukannya
-       kosong, dan menyusun kalimatnya melempar galat sebelum sempat
-       ditampilkan. */
+    /* Namanya diambil lewat penjaga: rujukannya bisa kosong kalau
+       akun/kantong sudah terhapus, dan menyusun kalimatnya tidak boleh
+       melempar galat sebelum sempat ditampilkan. */
     const namaAkun = (d.akun && d.akun.nama) || 'tempat itu';
     const namaKantong = (d.kantong && d.kantong.nama) || 'Saldo';
-    Modal.konfirmasi({
-      judul: titipan ? 'Ini uang titipan' : 'Saldo jadi minus',
-      pesan: titipan
-        ? `${namaKantong} di ${namaAkun} akan jadi ${rp(d.sesudah)}. Artinya uang orang lain terpakai. Tetap catat?`
-        : `${namaKantong} di ${namaAkun} akan jadi ${rp(d.sesudah)}. Mungkin ada transaksi yang belum dicatat. Tetap simpan?`,
-      labelYa:'Tetap catat', gayaYa:'btn-primary',
-      onYa: () => finalTx(calon)
-    });
-    return;
+    return gagal(`${namaKantong} di ${namaAkun} tidak cukup untuk ini. Saldo akan jadi ${rp(d.sesudah)}.`);
   }
   finalTx(calon);
 }

@@ -101,9 +101,8 @@ const Calc = {
 
   /* Cek sebelum menyimpan: apakah transaksi ini bikin
      saldo sel matriks jadi minus? (konsep.md §3.2 aturan 1)
-     Dikembalikan sebagai peringatan, bukan larangan —
-     kenyataan kadang memang begitu, dan menolak input
-     hanya membuat orang berhenti mencatat. */
+     Pemanggil memakai ini untuk MENOLAK transaksinya —
+     saldo tidak boleh minus. */
   cekDampak(db, calon) {
     const m = this.matriks(db);
     const cell = (ak, kt) => (m[ak] && m[ak][kt]) || 0;
