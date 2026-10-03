@@ -1254,7 +1254,9 @@ const TX = { jenis:'keluar', sub:'akun', akun_id:'', akun_tujuan_id:'',
              /* terisi hanya saat formulir dipakai untuk piutang:
                 { arah:'keluar'|'masuk', pihak_id }. Jenis dikunci, kategori
                 diisi otomatis, dan transaksinya bertanda peminjam. */
-             piutang: null };
+             piutang: null,
+             /* 'milik_sendiri' | 'titipan' — langkah pertama memilih sumber */
+             jenisUang: null };
 
 function pasangSheetInput() {
   pasangFormatAngka($('#txNominal'));
@@ -1310,6 +1312,7 @@ function bukaInput() {
   TX.edit = null;
   TX.jenisAsli = '';
   TX.piutang = null;
+  TX.jenisUang = null;
   $('#txJenis').hidden = false;
   judulSheet('');
 
@@ -1333,6 +1336,7 @@ function tutupInput() {
   TX.edit = null;
   TX.jenisAsli = '';
   TX.piutang = null;
+  TX.jenisUang = null;
   $('#txJenis').hidden = false;
   judulSheet('');
   $('#txSave').textContent = 'Simpan';
@@ -1363,6 +1367,7 @@ function bukaInputKoreksi(t) {
   TX.kantong_id = t.kantong_id || '';
   TX.kantong_tujuan_id = t.kantong_tujuan_id || '';
   TX.kategori_id = t.kategori_id || '';
+  TX.jenisUang = null;
 
   if (t.jenis === 'transfer_akun')          { TX.jenis = 'transfer'; TX.sub = 'akun'; }
   else if (t.jenis === 'transfer_kantong')  { TX.jenis = 'transfer'; TX.sub = 'kantong'; }
@@ -1465,12 +1470,12 @@ function renderTxRows() {
     tambah: { label:'+ Tambah tempat baru', aksi: () => dialogTambahAkun(id => { TX[field] = id; renderTxRows(); }) }
   });
 
-  const pilihKantong = (field, judul) => () => {
+  const pilihKantong = (field, judul, jenis) => () => {
     const selAkun = Calc.matriks(db)[TX.akun_id] || {};
     const namaAk = (Store.akun(TX.akun_id) || {}).nama || '';
     return Modal.pilih({
     judul,
-    opsi: Store.kantongAktif().map(k => ({
+    opsi: Store.kantongAktif().filter(k => !jenis || k.jenis === jenis).map(k => ({
       id:k.id, nama:k.nama, ikon: k.jenis === 'titipan' ? 'T' : 'P', warna:k.warna,
       ket: labelJenis(k) + (namaAk ? ' · isi di ' + namaAk : ''),
       kanan: rp(selAkun[k.id] || 0)
@@ -1482,6 +1487,41 @@ function renderTxRows() {
 
   const namaAkun = id => (Store.akun(id) || {}).nama;
   const objKantong = id => Store.kantong(id) || {};
+
+  /* Dua langkah: jenis uang (pribadi/titipan), lalu sumbernya — hanya dari
+     jenis itu. Sumber titipan wajib dipilih sendiri, supaya uang satu pihak
+     (mis. titipan ibu) tidak pernah keluar dari sumber pihak lain (kas RT). */
+  const barisSumber = judul => {
+    const aktif = Store.kantongAktif();
+    const adaTitipan = aktif.some(k => k.jenis === 'titipan');
+    const jumlahPribadi = aktif.filter(k => k.jenis !== 'titipan').length;
+    if (!adaTitipan && jumlahPribadi <= 1) return;
+
+    const k = objKantong(TX.kantong_id);
+    const jenisKini = TX.jenisUang || k.jenis || 'milik_sendiri';
+    TX.jenisUang = jenisKini;
+
+    if (adaTitipan) {
+      const seg = el('div', { class:'seg' });
+      [['milik_sendiri', 'Uang pribadi'], ['titipan', 'Uang titipan']].forEach(([v, t]) => {
+        seg.appendChild(el('button', {
+          class: jenisKini === v ? 'active' : '',
+          onclick: () => {
+            if (TX.jenisUang === v) return;
+            TX.jenisUang = v;
+            TX.kantong_id = v === 'titipan' ? '' : Store.kantongDefault().id;
+            renderTxRows();
+          }
+        }, t));
+      });
+      w.appendChild(seg);
+    }
+
+    const cocok = k.id && k.jenis === jenisKini;
+    w.appendChild(pickRow(jenisKini === 'titipan' ? 'Titipan dari' : 'Sumber uang pribadi',
+      cocok ? k.nama : '', jenisKini === 'titipan' ? 'Wajib dipilih' : 'Pilih',
+      pilihKantong('kantong_id', judul, jenisKini), cocok ? k.warna : null));
+  };
 
   if (TX.jenis === 'keluar' || TX.jenis === 'masuk') {
     if (TX.piutang) {
@@ -1497,11 +1537,7 @@ function renderTxRows() {
     w.appendChild(pickRow(TX.piutang && TX.piutang.arah === 'masuk' ? 'Masuk ke tempat' : 'Dari / ke tempat',
       namaAkun(TX.akun_id), 'Pilih', pilihAkun('akun_id', 'Pilih tempat')));
 
-    if (!sederhana) {
-      const k = objKantong(TX.kantong_id);
-      w.appendChild(pickRow('Sumber dana', k.nama, 'Pilih',
-        pilihKantong('kantong_id', 'Uang ini milik siapa?'), k.warna));
-    }
+    barisSumber(TX.jenis === 'keluar' ? 'Uang siapa yang dipakai?' : 'Uang ini milik siapa?');
 
     const tipe = TX.jenis === 'keluar' ? 'pengeluaran' : 'pemasukan';
     const kat = Store.kategori(TX.kategori_id);
@@ -1524,10 +1560,8 @@ function renderTxRows() {
   } else if (TX.sub === 'akun') {
     w.appendChild(pickRow('Dari', namaAkun(TX.akun_id), 'Pilih', pilihAkun('akun_id', 'Dari mana?')));
     w.appendChild(pickRow('Ke', namaAkun(TX.akun_tujuan_id), 'Pilih', pilihAkun('akun_tujuan_id', 'Ke mana?')));
+    barisSumber('Uang siapa yang dipindah?');
     if (!sederhana) {
-      const k = objKantong(TX.kantong_id);
-      w.appendChild(pickRow('Sumber dana', k.nama, 'Pilih',
-        pilihKantong('kantong_id', 'Uang siapa yang dipindah?'), k.warna));
       w.appendChild(el('p', { class:'fineprint', style:'margin:2px 0 0' },
         'Uang cuma berpindah tempat. Kepemilikannya tidak berubah, dan ini bukan pengeluaran.'));
     }
@@ -1565,7 +1599,9 @@ function simpanTx() {
      tersimpan diam-diam lalu tidak muncul di kartu rekening mana pun. */
   if (!Store.akun(TX.akun_id))
     return gagal('Tempat uangnya sudah tidak ada. Pilih ulang.');
-  if (!Store.modeSederhana() && TX.kantong_id && !Store.kantong(TX.kantong_id))
+  if (!TX.kantong_id)
+    return gagal(TX.jenisUang === 'titipan' ? 'Pilih titipan dari siapa.' : 'Pilih sumber dananya dulu.');
+  if (!Store.kantong(TX.kantong_id))
     return gagal('Sumber dananya sudah tidak ada. Pilih ulang.');
 
   const tgl = $('#txTgl').value;
