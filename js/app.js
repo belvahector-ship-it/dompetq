@@ -893,6 +893,21 @@ function renderDashboard() {
   judulBagian($('#stGrafik'), 'grafik', 'Pengeluaran 30 hari', pk.total ? rp(pk.total) : '');
   renderBars($('#dashBars'), pk, 'Belum ada pengeluaran dalam 30 hari terakhir.');
 
+  /* Dibiayai dari mana: hanya berarti kalau ada lebih dari satu sumber
+     dana pribadi (mis. Uang Pribadi = pendapatan, KUP = pinjaman). */
+  const ws = kosong($('#dashSumberBulan'));
+  const pribadi = db.kantong.filter(k => k.jenis === 'milik_sendiri');
+  const ps = Calc.pengeluaranPerSumber(db, awalBulan(kini), kini);
+  const totalPribadi = pribadi.reduce((s, k) => s + (ps[k.id] || 0), 0);
+  $('#dashSumberWrap').hidden = pribadi.length < 2 || !totalPribadi;
+  if (!$('#dashSumberWrap').hidden) {
+    judulBagian($('#stSumberBulan'), 'lapis', 'Pengeluaran bulan ini dibiayai dari', rp(totalPribadi));
+    renderBars(ws, {
+      rows: pribadi.filter(k => ps[k.id]).map(k => ({ nama: k.nama, nilai: ps[k.id] }))
+        .sort((a, b) => b.nilai - a.nilai)
+    }, '');
+  }
+
   /* transaksi terakhir */
   const wt = kosong($('#dashTx'));
   const akhir = db.transaksi.slice().sort((a, b) =>
@@ -1278,16 +1293,13 @@ function kantongTampil(m) {
   return Store.db.kantong.filter(k => !k.arsip || adaIsi(k.id));
 }
 
-function kantongTerisi(akunId) {
-  const sel = Calc.matriks(Store.db)[akunId] || {};
-  const milik = Store.kantongAktif().filter(k => k.jenis !== 'titipan');
-  const terbaik = milik.slice().sort((a, b) => (sel[b.id] || 0) - (sel[a.id] || 0))[0];
-  return (terbaik && (sel[terbaik.id] || 0) > 0) ? terbaik : Store.kantongDefault();
-}
-
 function bukaInput() {
+  /* Default selalu sumber dana pribadi default (mis. Uang Pribadi =
+     pendapatan). Sumber lain (mis. pinjaman KUP) hanya dipakai kalau
+     dipilih sendiri atau disetujui saat Uang Pribadi kurang — supaya
+     terlihat kapan pengeluaran mulai memakan uang pinjaman. */
   const ak = Store.akunDefault();
-  const kt = ak ? kantongTerisi(ak.id) : null;
+  const kt = Store.kantongDefault();
   if (!ak || !kt) { toast('Tambahkan akun dulu di Profil'); return; }
 
   TX.jenis = 'keluar'; TX.sub = 'akun';
@@ -1448,9 +1460,6 @@ function renderTxRows() {
     terpilih: TX[field],
     onPilih: o => {
       TX[field] = o.id;
-      /* ganti rekening = ikut ganti ke sumber dana pribadi yang ada isinya */
-      const kini = Store.kantong(TX.kantong_id);
-      if (field === 'akun_id' && (!kini || kini.jenis !== 'titipan')) TX.kantong_id = kantongTerisi(o.id).id;
       renderTxRows();
     },
     tambah: { label:'+ Tambah tempat baru', aksi: () => dialogTambahAkun(id => { TX[field] = id; renderTxRows(); }) }
@@ -1642,17 +1651,38 @@ function simpanTx() {
        rekening lain. Tawarkan pisah dulu sebelum menolak total —
        dari pada memaksa pengguna mencatatnya manual jadi dua baris. */
     if (calon.jenis === 'keluar' && !TX.edit && d.akun && d.kantong) {
-      /* Sumber dana milik sendiri lain di rekening yang sama yang cukup —
-         tawarkan langsung, supaya pengguna tidak perlu mencari sendiri. */
-      const mx = Calc.matriks(dbUji);
-      const alt = Store.kantongAktif().find(k => k.id !== calon.kantong_id &&
-        k.jenis === 'milik_sendiri' && ((mx[calon.akun_id] || {})[k.id] || 0) >= nominal);
-      /* Sama-sama uang milikmu di rekening yang sama: langsung pakai yang
-         ada isinya, tanpa bertanya. Titipan tidak pernah dipakai otomatis. */
-      if (alt && d.kantong.jenis === 'milik_sendiri') {
-        TX.kantong_id = alt.id;
-        renderTxRows();
-        return simpanTx();
+      /* Sumber dana pribadi yang dipilih kurang di rekening ini: tawarkan
+         menutup sisanya dari sumber dana pribadi lain DI REKENING YANG SAMA
+         (mis. pinjaman KUP). Selalu ditanya — inilah titik di mana
+         pengeluaran mulai memakan uang dari sumber lain. Titipan tidak
+         pernah ditawarkan otomatis. */
+      if (d.kantong.jenis === 'milik_sendiri') {
+        const sel = Calc.matriks(dbUji)[calon.akun_id] || {};
+        const ada = Math.max(0, sel[calon.kantong_id] || 0);
+        let sisa = nominal - ada;
+        const legs = ada > 0 ? [Object.assign({}, calon, { nominal: ada })] : [];
+        Store.kantongAktif()
+          .filter(k => k.id !== calon.kantong_id && k.jenis === 'milik_sendiri' && (sel[k.id] || 0) > 0)
+          .sort((a, b) => (sel[b.id] || 0) - (sel[a.id] || 0))
+          .forEach(k => {
+            if (sisa <= 0) return;
+            const ambil = Math.min(sisa, sel[k.id]);
+            legs.push(Object.assign({}, calon, { kantong_id: k.id, nominal: ambil }));
+            sisa -= ambil;
+          });
+
+        if (sisa <= 0) {
+          const tambahan = legs.filter(l => l.kantong_id !== calon.kantong_id)
+            .map(l => rp(l.nominal) + ' dari ' + Store.kantong(l.kantong_id).nama).join(' dan ');
+          Modal.konfirmasi({
+            judul: namaKantong + ' di ' + namaAkun + ' kurang',
+            pesan: namaKantong + ' di ' + namaAkun + ' tinggal ' + rp(ada) + '. ' +
+                   'Ambil sisanya, ' + tambahan + '?',
+            labelYa: 'Ya, ambil', gayaYa: 'btn-primary',
+            onYa: () => finalTxTerpisah(legs)
+          });
+          return;
+        }
       }
 
       const tersediaUtama = Math.max(0, d.sesudah + nominal);
@@ -1775,7 +1805,7 @@ function finalTxTerpisah(legs) {
   tutupInput();
   segarkan();
   const total = legs.reduce((s, l) => s + l.nominal, 0);
-  toast(`Tercatat dari ${legs.length} rekening · ${rp(total)}`);
+  toast(`Tercatat dalam ${legs.length} bagian · ${rp(total)}`);
 
   if (antreanPengingat.length) setTimeout(tanyaBerikutnya, 400);
 }

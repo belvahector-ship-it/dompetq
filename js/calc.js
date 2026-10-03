@@ -316,6 +316,24 @@ const Calc = {
     return { rows, total };
   },
 
+  /* Pengeluaran per sumber dana dalam rentang — untuk melihat seberapa
+     banyak belanja dibiayai pendapatan dan seberapa banyak dari sumber
+     lain (mis. pinjaman). Koreksi dan piutang tidak dihitung. */
+  pengeluaranPerSumber(db, dari, sampai) {
+    const d = new Date(dari).getTime(), s = new Date(sampai).getTime();
+    const skip = this.idDikoreksi(db);
+    const pp = this.idPihakPiutang(db);
+    const out = {};
+    for (const t of db.transaksi) {
+      if (t.jenis !== 'keluar' || skip.has(t.id)) continue;
+      if (t.pihak_id && pp.has(t.pihak_id)) continue;
+      const w = new Date(t.timestamp).getTime();
+      if (w < d || w > s) continue;
+      out[t.kantong_id] = (out[t.kantong_id] || 0) + (Number(t.nominal) || 0);
+    }
+    return out;
+  },
+
   /* Arus kas periode — hanya dana milik sendiri kalau diminta */
   arusKas(db, dari, sampai, hanyaMilikSendiri) {
     const d = new Date(dari).getTime(), s = new Date(sampai).getTime();
