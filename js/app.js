@@ -835,6 +835,19 @@ function renderDashboard() {
       ])
     ]));
   });
+  /* Pengingat talangan: uang pribadi yang masih nyangkut di dana titipan. */
+  Calc.talangan(db).forEach(o => {
+    const akhir = o.item[o.item.length - 1];
+    wb.appendChild(el('div', { class:'warn amber' }, [
+      el('div', { style:'flex:1;min-width:0' }, [
+        el('b', null, 'Dana pribadi nyangkut di ' + o.kantong.nama + ' ' + rp(o.sisa)),
+        akhir ? (akhir.keterangan || 'Talangan') + ' · ' + tglRelatif(akhir.timestamp) : ''
+      ]),
+      el('button', { class:'btn btn-sm', style:'align-self:center',
+                     onclick: () => dialogGantiTalangan(o) }, 'Sudah diganti')
+    ]));
+  });
+
   if (r.yatim.baris > 0) {
     wb.appendChild(el('div', { class:'warn amber' }, [
       el('div', null, [
@@ -1256,7 +1269,9 @@ const TX = { jenis:'keluar', sub:'akun', akun_id:'', akun_tujuan_id:'',
                 diisi otomatis, dan transaksinya bertanda peminjam. */
              piutang: null,
              /* 'milik_sendiri' | 'titipan' — langkah pertama memilih sumber */
-             jenisUang: null };
+             jenisUang: null,
+             /* centang "talangi dulu pakai uang pribadi" untuk pengeluaran titipan */
+             talangan: false };
 
 function pasangSheetInput() {
   pasangFormatAngka($('#txNominal'));
@@ -1313,6 +1328,7 @@ function bukaInput() {
   TX.jenisAsli = '';
   TX.piutang = null;
   TX.jenisUang = null;
+  TX.talangan = false;
   $('#txJenis').hidden = false;
   judulSheet('');
 
@@ -1337,6 +1353,7 @@ function tutupInput() {
   TX.jenisAsli = '';
   TX.piutang = null;
   TX.jenisUang = null;
+  TX.talangan = false;
   $('#txJenis').hidden = false;
   judulSheet('');
   $('#txSave').textContent = 'Simpan';
@@ -1521,6 +1538,17 @@ function renderTxRows() {
     w.appendChild(pickRow(jenisKini === 'titipan' ? 'Titipan dari' : 'Sumber uang pribadi',
       cocok ? k.nama : '', jenisKini === 'titipan' ? 'Wajib dipilih' : 'Pilih',
       pilihKantong('kantong_id', judul, jenisKini), cocok ? k.warna : null));
+
+    /* Talangan: belanja untuk titipan dibayar dulu pakai uang pribadi,
+       lalu tercatat sebagai dana pribadi yang nyangkut sampai diganti. */
+    if (jenisKini === 'titipan' && TX.jenis === 'keluar' && !TX.piutang && !TX.edit) {
+      const cb = el('input', { type:'checkbox' });
+      cb.checked = !!TX.talangan;
+      cb.onchange = () => { TX.talangan = cb.checked; };
+      w.appendChild(el('label', { class:'talangan-cek' }, [
+        cb, el('span', null, 'Talangi dulu pakai uang pribadi (dicatat sebagai rembes)')
+      ]));
+    }
   };
 
   if (TX.jenis === 'keluar' || TX.jenis === 'masuk') {
@@ -1656,6 +1684,14 @@ function simpanTx() {
      Saat mengoreksi, baris lama akan dibalik, jadi dampaknya dihitung
      terhadap data TANPA baris itu. Kalau tidak, memperbaiki salah ketik
      nominal besar selalu memunculkan tolakan palsu. */
+  if (TX.talangan && calon.jenis === 'keluar' && !TX.edit && !TX.piutang &&
+      (Store.kantong(calon.kantong_id) || {}).jenis === 'titipan') {
+    if (!Store.catatTalangan(calon, calon.nominal))
+      return gagal('Uang pribadi di ' + ((Store.akun(calon.akun_id) || {}).nama || 'rekening ini') +
+                   ' tidak cukup untuk menalangi ' + rp(calon.nominal) + '.');
+    return selesaiCatatan('Ditalangi uang pribadi · ' + rp(calon.nominal));
+  }
+
   const dbUji = TX.edit
     ? Object.assign({}, Store.db, { transaksi: Store.db.transaksi.filter(t => t.id !== TX.edit) })
     : Store.db;
@@ -1719,6 +1755,10 @@ function simpanTx() {
           });
           return;
         }
+      }
+
+      if (d.kantong.jenis === 'titipan' && !TX.piutang) {
+        return bukaPilihanTalangan(calon, dbUji, Math.max(0, d.sesudah + nominal));
       }
 
       const tersediaUtama = Math.max(0, d.sesudah + nominal);
@@ -1825,6 +1865,76 @@ function bukaPisahRekening(calon, info) {
 /* Simpan beberapa baris 'keluar' sekaligus — hasil dari dialog pisah
    rekening. Sama seperti finalTx, tapi tidak pernah untuk TX.edit:
    koreksi transaksi yang sudah dipisah tetap ditangani satu per satu. */
+/* Penutup sesudah catatan tersimpan lewat jalur khusus (talangan). */
+function selesaiCatatan(pesan) {
+  if (TX.pengingat) {
+    const p = (Store.db.pengingat || []).find(x => x.id === TX.pengingat.id);
+    if (p) Pengingat.tandaiTerpenuhi(p, TX.pengingat.jatuhStr);
+    TX.pengingat = null;
+  }
+  tutupInput();
+  segarkan();
+  toast(pesan);
+  if (antreanPengingat.length) setTimeout(tanyaBerikutnya, 400);
+}
+
+/* Saldo titipan kurang: pilih menalangi sebagian, menalangi semua,
+   mengambil titipan yang SAMA dari rekening lain, atau batal. Tidak
+   pernah mengambil dari titipan pihak lain. */
+function bukaPilihanTalangan(calon, dbUji, ada) {
+  const titipan = Store.kantong(calon.kantong_id);
+  const akun = Store.akun(calon.akun_id);
+  const kurang = calon.nominal - ada;
+  const bisaKurang = ada > 0 && !!Store._rencanaPribadi(calon.akun_id, kurang);
+  const bisaSemua = !!Store._rencanaPribadi(calon.akun_id, calon.nominal);
+  const lain = Calc.sumberLain(dbUji, calon.kantong_id, calon.akun_id);
+  const totalLain = lain.reduce((s, x) => s + x.nilai, 0);
+
+  const wrap = el('div');
+  wrap.appendChild(el('p', { class:'muted', style:'margin:0 0 12px' },
+    titipan.nama + ' di ' + akun.nama + ' tinggal ' + rp(ada) + ', kurang ' + rp(kurang) +
+    ' untuk ' + rp(calon.nominal) + '.'));
+
+  const opsi = (judul, ket, bisa, aksi) => wrap.appendChild(el('button', {
+    class:'btn btn-outline btn-block talangan-opsi', disabled: bisa ? null : '',
+    onclick: () => { Modal.tutup(); aksi(); }
+  }, [ el('b', null, judul), el('small', null, bisa ? ket : 'Uang pribadi di ' + akun.nama + ' tidak cukup') ]));
+
+  const talangi = jumlah => {
+    if (!Store.catatTalangan(calon, jumlah)) { toast('Gagal mencatat talangan. Saldo berubah?'); return; }
+    selesaiCatatan('Ditalangi uang pribadi · ' + rp(jumlah));
+  };
+
+  if (ada > 0) opsi('Kurangnya pakai uang pribadi',
+    'Talangan ' + rp(kurang) + ', sisanya dari ' + titipan.nama, bisaKurang, () => talangi(kurang));
+  opsi('Semua pakai uang pribadi dulu',
+    'Talangan ' + rp(calon.nominal) + ', ' + titipan.nama + ' tidak terpakai', bisaSemua, () => talangi(calon.nominal));
+  if (totalLain >= kurang) {
+    wrap.appendChild(el('button', { class:'btn btn-outline btn-block talangan-opsi', onclick: () => {
+      Modal.tutup();
+      bukaPisahRekening(calon, { namaKantong: titipan.nama, namaAkunUtama: akun.nama,
+                                 tersediaUtama: ada, kurang, lain });
+    } }, [ el('b', null, 'Ambil ' + titipan.nama + ' dari rekening lain'),
+           el('small', null, titipan.nama + ' masih ada ' + rp(totalLain) + ' di rekening lain') ]));
+  }
+
+  Modal.buka({ judul:'Saldo ' + titipan.nama + ' kurang', isi: wrap, aksi:[{ label:'Batal' }] });
+}
+
+function dialogGantiTalangan(o) {
+  Modal.form({
+    judul:'Talangan diganti',
+    medan:[{ nama:'nominal', label:'Diganti oleh ' + o.kantong.nama, tipe:'angka', nilai: o.sisa }],
+    labelSimpan:'Catat',
+    onSimpan: v => {
+      const h = Store.gantiTalangan(o.kantong.id, v.nominal);
+      if (!h.ok) return h.alasan;
+      segarkan();
+      toast('Talangan diganti · ' + rp(h.nominal));
+    }
+  });
+}
+
 function finalTxTerpisah(legs) {
   if (legs.some(l => Calc.cekDampak(Store.db, l).length)) {
     toast('Saldo berubah sejak dibuka. Tidak ada yang tersimpan — cek lagi.');

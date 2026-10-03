@@ -756,3 +756,9 @@ input,select{font:inherit;color:inherit}
   border-radius:var(--r-sm);margin-bottom:12px;font-family:var(--font-num)}
 .rekon.ok{background:var(--green-soft);color:var(--green-ink)}
 .rekon.bahaya{background:var(--red-soft);color:var(--red-ink)}
+.talangan-cek{display:flex;gap:9px;align-items:flex-start;font-size:13px;font-weight:600;
+  color:var(--ink-2);line-height:1.45;margin:2px 0 0;cursor:pointer}
+.talangan-cek input{width:18px;height:18px;margin-top:1px;flex:none;accent-color:var(--ink)}
+.talangan-opsi{flex-direction:column;align-items:flex-start;text-align:left;gap:2px;margin-bottom:9px}
+.talangan-opsi small{color:var(--ink-3);font-weight:600;font-size:12px}
+.talangan-opsi[disabled]{opacity:.45;box-shadow:none;cursor:not-allowed}

@@ -784,6 +784,87 @@ const Store = {
     return ditutup;
   },
 
+  /* ── talangan (reimburse) ── lihat Calc.talangan */
+  kategoriTalangan() { return this.tambahKategori({ nama: 'Talangan (rembes)', tipe: 'talangan' }); },
+
+  /* Sumber pribadi di satu rekening yang bisa menutup `jumlah`: default
+     dulu, lalu sumber pribadi lain. null kalau tidak cukup. */
+  _rencanaPribadi(akunId, jumlah) {
+    const sel = Calc.matriks(this.db)[akunId] || {};
+    const pribadi = this.kantongAktif().filter(k => k.jenis !== 'titipan')
+      .sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0));
+    const legs = [];
+    let sisa = jumlah;
+    for (const k of pribadi) {
+      if (sisa <= 0) break;
+      const ada = Math.max(0, sel[k.id] || 0);
+      if (!ada) continue;
+      const ambil = Math.min(ada, sisa);
+      legs.push({ kantong: k, nominal: ambil });
+      sisa -= ambil;
+    }
+    return sisa > 0 ? null : legs;
+  },
+
+  /* Pengeluaran titipan yang `jumlah`-nya ditalangi uang pribadi di
+     rekening yang sama. Semua diperiksa dulu, baru ditulis sekaligus. */
+  catatTalangan(calon, jumlah) {
+    const titipan = this.kantong(calon.kantong_id);
+    if (!titipan || titipan.jenis !== 'titipan' || jumlah <= 0) return null;
+    const sel = Calc.matriks(this.db)[calon.akun_id] || {};
+    if (Math.max(0, sel[titipan.id] || 0) + jumlah < calon.nominal) return null;
+    const legs = this._rencanaPribadi(calon.akun_id, jumlah);
+    if (!legs) return null;
+
+    const kat = this.kategoriTalangan();
+    const ket = 'Talangan untuk ' + titipan.nama + (calon.keterangan ? ': ' + calon.keterangan : '');
+    legs.forEach(l => this._tambahTx({
+      jenis: 'transfer_kantong', nominal: l.nominal, timestamp: calon.timestamp,
+      akun_id: calon.akun_id, kantong_id: l.kantong.id, kantong_tujuan_id: titipan.id,
+      kategori_id: kat.id, keterangan: ket
+    }));
+    const tx = this._tambahTx(calon);
+    this.simpanSekarang();
+    return tx;
+  },
+
+  /* Titipan mengganti talangan: uang dikembalikan ke sumber pribadi yang
+     dulu menalangi, diambil dari rekening tempat titipan itu tersimpan. */
+  gantiTalangan(titipanId, nominal) {
+    const o = Calc.talangan(this.db).find(x => x.kantong.id === titipanId);
+    if (!o) return { ok:false, alasan:'Tidak ada talangan untuk sumber dana ini.' };
+    let sisa = Math.min(Math.round(nominal), o.sisa);
+    if (!(sisa > 0)) return { ok:false, alasan:'Nominal belum diisi.' };
+
+    const m = Calc.matriks(this.db);
+    const ada = {};
+    Object.keys(m).forEach(ak => { if (this.akun(ak) && (m[ak][titipanId] || 0) > 0) ada[ak] = m[ak][titipanId]; });
+    const totalAda = Object.values(ada).reduce((s, v) => s + v, 0);
+    if (totalAda < sisa) return { ok:false, alasan:'Uang ' + o.kantong.nama + ' cuma ' + rp(totalAda) + ' di semua rekening.' };
+
+    const kat = this.kategoriTalangan();
+    const tujuan = Object.keys(o.perPribadi).filter(id => o.perPribadi[id] > 0 && this.kantong(id));
+    if (!tujuan.length) tujuan.push(this.kantongDefault().id);
+    const dicatat = sisa;
+    for (const kid of tujuan) {
+      let bagian = Math.min(sisa, o.perPribadi[kid] > 0 ? o.perPribadi[kid] : sisa);
+      for (const ak of Object.keys(ada).sort((a, b) => ada[b] - ada[a])) {
+        if (bagian <= 0) break;
+        const ambil = Math.min(bagian, ada[ak]);
+        if (!ambil) continue;
+        this._tambahTx({
+          jenis: 'transfer_kantong', nominal: ambil, akun_id: ak,
+          kantong_id: titipanId, kantong_tujuan_id: kid,
+          kategori_id: kat.id, keterangan: 'Talangan diganti oleh ' + o.kantong.nama
+        });
+        ada[ak] -= ambil; bagian -= ambil; sisa -= ambil;
+      }
+      if (sisa <= 0) break;
+    }
+    this.simpanSekarang();
+    return { ok:true, nominal: dicatat };
+  },
+
   /* Menolkan saldo yang merujuk rekening atau sumber dana yang sudah tidak
      ada. Hanya menambah entri penyesuaian: riwayat lama tetap utuh, dan
      rekening yang masih ada tidak tersentuh. */

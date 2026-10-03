@@ -316,6 +316,45 @@ const Calc = {
     return { rows, total };
   },
 
+  /* ── talangan (reimburse) ──
+     Uang pribadi yang dipakai dulu untuk keperluan dana titipan. Dicatat
+     sebagai pindah sumber dana bertanda kategori 'talangan':
+       pribadi → titipan  = menalangi
+       titipan → pribadi  = talangan diganti
+     Sisa per titipan = ditalangi − diganti. */
+  idKategoriTalangan(db) {
+    return new Set(db.kategori.filter(k => k.tipe === 'talangan').map(k => k.id));
+  },
+
+  talangan(db) {
+    const kat = this.idKategoriTalangan(db);
+    const skip = this.idDikoreksi(db);
+    const per = {};
+    const ambil = k => per[k.id] || (per[k.id] = { kantong: k, ditalangi: 0, diganti: 0, perPribadi: {}, item: [] });
+
+    const urut = db.transaksi.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    for (const t of urut) {
+      if (t.jenis !== 'transfer_kantong' || !kat.has(t.kategori_id) || skip.has(t.id)) continue;
+      const asal = db.kantong.find(k => k.id === t.kantong_id);
+      const tujuan = db.kantong.find(k => k.id === t.kantong_tujuan_id);
+      if (!asal || !tujuan) continue;
+      const n = Number(t.nominal) || 0;
+      if (tujuan.jenis === 'titipan' && asal.jenis !== 'titipan') {
+        const o = ambil(tujuan);
+        o.ditalangi += n;
+        o.perPribadi[asal.id] = (o.perPribadi[asal.id] || 0) + n;
+        o.item.push(t);
+      } else if (asal.jenis === 'titipan' && tujuan.jenis !== 'titipan') {
+        const o = ambil(asal);
+        o.diganti += n;
+        o.perPribadi[tujuan.id] = (o.perPribadi[tujuan.id] || 0) - n;
+      }
+    }
+    return Object.values(per)
+      .map(o => Object.assign(o, { sisa: o.ditalangi - o.diganti }))
+      .filter(o => o.sisa > 0);
+  },
+
   /* Pengeluaran per sumber dana dalam rentang — untuk melihat seberapa
      banyak belanja dibiayai pendapatan dan seberapa banyak dari sumber
      lain (mis. pinjaman). Koreksi dan piutang tidak dihitung. */
