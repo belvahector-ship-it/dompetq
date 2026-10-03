@@ -508,6 +508,12 @@ const Store = {
 
   /* ── transaksi (append-only) ── */
   catat(t) {
+    /* Penjaga terakhir: tidak ada jalur yang boleh membuat sel rekening ×
+       sumber dana jadi minus, apa pun pemanggilnya. Yang ditolak dikembalikan
+       sebagai null, pemanggil wajib memeriksanya. */
+    if ((t.jenis === 'keluar' || t.jenis === 'transfer_akun' || t.jenis === 'transfer_kantong') &&
+        Calc.cekDampak(this.db, t).length) return null;
+
     const tx = Object.assign({
       id: uid('trx'),
       timestamp: new Date().toISOString(),
@@ -612,9 +618,15 @@ const Store = {
      berbeda dengan kenyataan, selisihnya dicatat sebagai transaksi
      penyesuaian. Riwayat tetap utuh dan selisihnya terlihat —
      itu justru sering menandakan ada transaksi yang lupa dicatat. */
-  sesuaikanSaldo(akunId, saldoBaru, kantongId) {
-    const sekarang = Calc.ringkas(this.db).saldoAkun[akunId] || 0;
-    const selisih = Math.round(saldoBaru) - sekarang;
+  sesuaikanSaldo(akunId, kantongId, saldoBaru) {
+    const target = Math.round(saldoBaru);
+    if (!(target >= 0)) return null;
+
+    /* Selisih dihitung di SEL yang sama dengan yang dicatat. Dulu selisih
+       diambil dari total rekening (semua sumber dana) lalu seluruhnya
+       dimasukkan ke satu sumber dana — itu yang membuat minus puluhan juta. */
+    const sekarang = (Calc.matriks(this.db)[akunId] || {})[kantongId] || 0;
+    const selisih = target - sekarang;
     if (selisih === 0) return null;
 
     const kat = this.tambahKategori({
@@ -626,10 +638,115 @@ const Store = {
       jenis: selisih > 0 ? 'masuk' : 'keluar',
       nominal: Math.abs(selisih),
       akun_id: akunId,
-      kantong_id: kantongId || this.kantongDefault().id,
+      kantong_id: kantongId,
       kategori_id: kat.id,
       keterangan: 'Penyesuaian saldo'
     });
+  },
+
+  /* ── piutang ──
+     Peminjam disimpan di tabel pihak (tipe 'peminjam') yang sudah ikut
+     tersinkron ke Sheets. Tidak ada kolom baru. */
+  pihak(id) { return (this.db.pihak || []).find(p => p.id === id); },
+  daftarPeminjam() { return (this.db.pihak || []).filter(p => p.tipe === 'peminjam'); },
+
+  tambahPeminjam(nama) {
+    nama = String(nama || '').trim();
+    if (!nama) return null;
+    const ada = this.daftarPeminjam().find(p => p.nama.toLowerCase() === nama.toLowerCase());
+    if (ada) return ada;
+    const p = { id: uid('phk'), nama, tipe: 'peminjam', kontak: '' };
+    this.db.pihak.push(p);
+    this.simpan();
+    return p;
+  },
+
+  /* arah: 'keluar' = meminjamkan, 'masuk' = dibayar balik */
+  kategoriPiutang(arah) {
+    return arah === 'keluar'
+      ? this.tambahKategori({ nama: 'Memberikan hutang', tipe: 'pengeluaran' })
+      : this.tambahKategori({ nama: 'Pembayaran piutang', tipe: 'pemasukan' });
+  },
+
+  /* Mengaitkan catatan lama ke seorang peminjam.
+
+     Baris lama tidak pernah ditimpa, dan di dua perangkat versi lama
+     yang menang saat sinkron — jadi cara yang jujur dan tahan sinkron
+     adalah entri pembalik + salinan baru yang sudah bertanda. Saldo
+     tidak berubah sama sekali: pembalik dan salinan saling meniadakan.
+     Satu tulis untuk semuanya. */
+  tautkanBanyak(daftar) {
+    let jumlah = 0;
+    for (const { txId, pihakId } of daftar) {
+      const asli = this.db.transaksi.find(t => t.id === txId);
+      if (!asli || asli.pihak_id || !this.pihak(pihakId)) continue;
+      const balik = this._buatPembalik(txId);
+      if (!balik) continue;
+      this.db.transaksi.push(balik);
+      this.db.transaksi.push(Object.assign({}, asli, {
+        id: uid('trx'),
+        dibuat_pada: new Date().toISOString(),
+        reversal_dari: '',
+        koreksi_dari: txId,
+        pihak_id: pihakId
+      }));
+      jumlah++;
+    }
+    if (jumlah) this.simpanSekarang();
+    return jumlah;
+  },
+
+  /* Mengikhlaskan sisa piutang: bukan uang yang kembali, jadi saldo tidak
+     boleh bergerak. Dicatat sebagai sepasang entri yang saling meniadakan
+     di saldo — satu pembayaran fiktif yang menutup piutang (bertanda
+     peminjam, tidak masuk laporan), satu pengeluaran biasa yang membuat
+     kerugiannya terlihat di laporan. */
+  ikhlaskan(pihakId) {
+    const o = Calc.piutang(this.db).orang[pihakId];
+    if (!o || o.sisa <= 0) return 0;
+
+    const katMasuk = this.kategoriPiutang('masuk');
+    const katLugi = this.tambahKategori({ nama: 'Piutang diikhlaskan', tipe: 'pengeluaran' });
+    const sekarang = new Date().toISOString();
+    let ditutup = 0;
+
+    for (const kid in o.kantong) {
+      const nilai = o.kantong[kid];
+      if (nilai <= 0) continue;
+      const akun = (o.riwayat.filter(t => t.kantong_id === kid && t.jenis === 'keluar').pop() || {}).akun_id
+                 || o.akunTerakhir || (this.akunDefault() || {}).id;
+      this.catat({ jenis:'masuk', nominal:nilai, akun_id:akun, kantong_id:kid, timestamp:sekarang,
+                   kategori_id:katMasuk.id, pihak_id:pihakId, keterangan:'Diikhlaskan' });
+      this.catat({ jenis:'keluar', nominal:nilai, akun_id:akun, kantong_id:kid, timestamp:sekarang,
+                   kategori_id:katLugi.id, keterangan:'Piutang diikhlaskan — ' + o.pihak.nama });
+      ditutup += nilai;
+    }
+    return ditutup;
+  },
+
+  /* Menolkan saldo yang merujuk rekening atau sumber dana yang sudah tidak
+     ada. Hanya menambah entri penyesuaian: riwayat lama tetap utuh, dan
+     rekening yang masih ada tidak tersentuh. */
+  nolkanYatim() {
+    const akunIds = new Set(this.db.akun.map(a => a.id));
+    const kIds = new Set(this.db.kantong.map(k => k.id));
+    const m = Calc.matriks(this.db);
+    const kat = this.tambahKategori({ nama: 'Penyesuaian Saldo', tipe: 'pengeluaran' });
+    const katMasuk = this.tambahKategori({ nama: 'Penyesuaian Saldo', tipe: 'pemasukan' });
+    let jumlah = 0;
+    for (const ak in m) for (const kt in m[ak]) {
+      const v = m[ak][kt];
+      if (v === 0 || (akunIds.has(ak) && kIds.has(kt))) continue;
+      this.catat({
+        jenis: v > 0 ? 'keluar' : 'masuk',
+        nominal: Math.abs(v),
+        akun_id: ak, kantong_id: kt,
+        kategori_id: v > 0 ? kat.id : katMasuk.id,
+        keterangan: 'Nolkan saldo yatim'
+      });
+      jumlah++;
+    }
+    return jumlah;
   },
 
   /* ── kunci saldo ──

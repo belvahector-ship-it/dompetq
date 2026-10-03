@@ -20,6 +20,7 @@ function masukApp() {
   pasangProfil();
   pasangLaporan();
   pasangTransaksi();
+  pasangPiutang();
   navTo('dashboard');
 
   /* Diperiksa setelah layar siap, bukan di tengah pemuatan — pop-up
@@ -144,10 +145,14 @@ function tanyaBentrok(lokal, jauh) {
 
 /* ═══════════ NAVIGASI ═══════════ */
 let layarAktif = 'dashboard';
+/* layar sebelum masuk ke halaman piutang — tujuan tombol Kembali */
+let layarSebelum = 'dashboard';
 
 function navTo(nama) {
+  if (nama === 'piutang' && layarAktif !== 'piutang') layarSebelum = layarAktif;
+  if (nama !== 'piutang') { RAPIKAN.aktif = false; RAPIKAN.segarkan = null; }
   layarAktif = nama;
-  ['dashboard','transaksi','laporan','profil'].forEach(n => {
+  ['dashboard','transaksi','laporan','profil','piutang'].forEach(n => {
     $('#scr-' + n).hidden = (n !== nama);
   });
   $$('#bottomnav button[data-nav]').forEach(b =>
@@ -157,6 +162,7 @@ function navTo(nama) {
   if (nama === 'transaksi') renderTransaksi();
   if (nama === 'laporan')   renderLaporan();
   if (nama === 'profil')    renderProfil();
+  if (nama === 'piutang')   renderPiutang();
 }
 
 function pasangNav() {
@@ -771,7 +777,7 @@ function renderDashboard() {
   $('#dashNama').textContent = db.profil.nama || 'DompetQ';
 
   /* kartu utama */
-  const bahaya = r.negatif.length > 0;
+  const bahaya = r.negatifSel.length > 0 || r.yatim.baris > 0;
   $('#heroCard').className = 'hero-card' + (bahaya ? ' alert' : '');
   $('#heroCard').querySelector('small').textContent =
     sederhana ? 'Total uang saya' : 'Uang saya bersih';
@@ -787,18 +793,54 @@ function renderDashboard() {
 
   renderSambungLagi();
 
+  /* Uang di tangan memang segitu, tapi sebagian sedang dipinjam orang.
+     Yang dihitung hanya piutang dari dana milik sendiri — piutang dari
+     dana titipan bukan uang saya. */
+  const pt = Calc.piutang(db);
+  const hp = kosong($('#heroProyeksi'));
+  hp.hidden = !(pt.milikSendiri > 0);
+  if (!hp.hidden) {
+    hp.appendChild(el('div', { class:'hp-baris' }, [
+      el('span', null, 'Masih dipinjam orang'), el('b', null, '+' + rp(pt.milikSendiri))
+    ]));
+    hp.appendChild(el('div', { class:'hp-baris hp-total' }, [
+      el('span', null, 'Seharusnya uang saya'),
+      el('span', { style:'display:flex;align-items:center',
+                   html:'<b>' + esc(rp(r.uangSaya + pt.milikSendiri)) + '</b>' + CHEVRON })
+    ]));
+  }
+
+  renderAjakRapikan();
+
   /* peringatan */
   const wb = kosong($('#warnBox'));
-  r.negatif.forEach(n => {
+  r.negatifSel.forEach(n => {
+    const titipan = n.kantong.jenis === 'titipan';
     wb.appendChild(el('div', { class:'warn' }, [
       el('div', null, [
-        el('b', null, n.kantong.nama + ' minus ' + rp(Math.abs(n.nilai))),
-        n.kantong.jenis === 'titipan'
-          ? 'Uang titipan terpakai untuk keperluan lain. Segera kembalikan atau catat penggantiannya lewat "Pindah".'
-          : 'Pengeluaran melebihi saldo yang tercatat. Cek lagi catatannya.'
+        el('b', null, n.kantong.nama + ' di ' + n.akun.nama + ' minus ' + rp(Math.abs(n.nilai))),
+        titipan
+          ? 'Uang titipan tercatat lebih besar dari yang ada di rekening ini. Pindahkan dari sumber dana lain lewat "Pindah".'
+          : 'Uang pribadi tercatat lebih besar dari yang ada di rekening ini. Pindahkan dari sumber dana lain lewat "Pindah".'
       ])
     ]));
   });
+  if (r.yatim.baris > 0) {
+    wb.appendChild(el('div', { class:'warn amber' }, [
+      el('div', null, [
+        el('b', null, rp(r.yatim.nilai) + ' tidak ikut total'),
+        'Ada saldo yang merujuk rekening atau sumber dana yang sudah tidak ada. Ditolkan dengan entri penyesuaian; riwayat lama tetap tersimpan.'
+      ]),
+      el('button', { class:'btn btn-sm', style:'margin-top:8px', onclick: () => {
+        Modal.konfirmasi({
+          judul:'Nolkan saldo yatim',
+          pesan:'Setiap saldo yang merujuk rekening atau sumber dana yang sudah tidak ada akan ditolkan dengan entri penyesuaian. Tidak ada transaksi yang dihapus, dan rekening yang masih ada tidak berubah.',
+          labelYa:'Ya, nolkan', gayaYa:'btn-primary',
+          onYa: () => { const n = Store.nolkanYatim(); segarkan(); toast(n + ' saldo yatim ditolkan'); }
+        });
+      } }, 'Nolkan saldo yatim')
+    ]));
+  }
 
   renderPengingatBeranda();
 
@@ -823,12 +865,14 @@ function renderDashboard() {
     const wk = kosong($('#dashKantong'));
     db.kantong.forEach(k => {
       const v = r.saldoKantong[k.id] || 0;
+      const dipinjam = pt.perKantong[k.id] || 0;
       wk.appendChild(el('div', { class:'kt-row' }, [
         el('div', { class:'kt-dot', style:'background:' + k.warna }),
         el('div', { class:'kt-nm' }, k.nama),
         el('span', { class:'tag ' + (k.jenis === 'titipan' ? 'titipan' : 'milik') },
            k.jenis === 'titipan' ? 'titipan' : 'milik saya'),
-        el('div', { class:'kt-val' + (v < 0 ? ' neg' : '') }, rp(v))
+        el('div', { class:'kt-val' + (v < 0 ? ' neg' : '') }, rp(v)),
+        dipinjam > 0 ? el('div', { class:'kt-pinjam' }, '+' + rp(dipinjam) + ' sedang dipinjam orang') : null
       ]));
     });
   }
@@ -1083,10 +1127,14 @@ function barisTx(t) {
     ket = (Store.kantong(t.kantong_id) || {}).nama + ' → ' + (Store.kantong(t.kantong_tujuan_id) || {}).nama;
   } else {
     const k = Store.kategori(t.kategori_id);
-    judul = t.keterangan || (k ? k.nama : namaJenis(t.jenis));
+    const ph = t.pihak_id ? Store.pihak(t.pihak_id) : null;
+    judul = t.keterangan || (ph
+      ? (t.jenis === 'keluar' ? 'Pinjaman ke ' : 'Pembayaran dari ') + ph.nama
+      : (k ? k.nama : namaJenis(t.jenis)));
     const bagian = [ (Store.akun(t.akun_id) || {}).nama ];
     if (!Store.modeSederhana()) bagian.push((Store.kantong(t.kantong_id) || {}).nama);
     if (k && t.keterangan) bagian.unshift(k.nama);
+    if (ph && t.keterangan) bagian.unshift(ph.nama);
     ket = bagian.filter(Boolean).join(' · ');
   }
 
@@ -1119,6 +1167,8 @@ function detailTx(t) {
     if (t.kantong_tujuan_id) tambah('Ke sumber dana', (Store.kantong(t.kantong_tujuan_id) || {}).nama);
   }
   tambah('Kategori', (Store.kategori(t.kategori_id) || {}).nama);
+  tambah(t.jenis === 'keluar' ? 'Dipinjam oleh' : 'Dibayar oleh',
+         t.pihak_id && (Store.pihak(t.pihak_id) || {}).nama);
   tambah('Keterangan', t.keterangan);
   tambah('Dicatat', tglPanjang(t.dibuat_pada));
   if (t.koreksi_dari) tambah('Asal', 'Hasil koreksi transaksi sebelumnya');
@@ -1176,7 +1226,11 @@ const TX = { jenis:'keluar', sub:'akun', akun_id:'', akun_tujuan_id:'',
              /* jenis asli baris yang dikoreksi. 'saldo_awal' tidak punya
                 tombolnya sendiri di segmen, jadi harus diingat terpisah
                 supaya tidak berubah diam-diam jadi pemasukan biasa. */
-             jenisAsli: '' };
+             jenisAsli: '',
+             /* terisi hanya saat formulir dipakai untuk piutang:
+                { arah:'keluar'|'masuk', pihak_id }. Jenis dikunci, kategori
+                diisi otomatis, dan transaksinya bertanda peminjam. */
+             piutang: null };
 
 function pasangSheetInput() {
   pasangFormatAngka($('#txNominal'));
@@ -1210,6 +1264,8 @@ function bukaInput() {
   TX.pengingat = null;
   TX.edit = null;
   TX.jenisAsli = '';
+  TX.piutang = null;
+  $('#txJenis').hidden = false;
   judulSheet('');
 
   $$('#txJenis button').forEach(x => x.classList.toggle('active', x.dataset.j === 'keluar'));
@@ -1231,6 +1287,8 @@ function tutupInput() {
   $('#sheetInput').style.transform = '';
   TX.edit = null;
   TX.jenisAsli = '';
+  TX.piutang = null;
+  $('#txJenis').hidden = false;
   judulSheet('');
   $('#txSave').textContent = 'Simpan';
 }
@@ -1272,6 +1330,14 @@ function bukaInputKoreksi(t) {
   $('#txTgl').value = tglInput(t.timestamp);
   judulSheet('Koreksi transaksi');
   $('#txSave').textContent = 'Simpan koreksi';
+
+  /* Transaksi piutang tetap piutang saat dikoreksi — kalau tidak, tandanya
+     hilang diam-diam dan pinjamannya jatuh balik jadi pengeluaran biasa. */
+  const ph = t.pihak_id && Store.pihak(t.pihak_id);
+  if (ph && ph.tipe === 'peminjam' && (t.jenis === 'keluar' || t.jenis === 'masuk')) {
+    TX.piutang = { arah: t.jenis, pihak_id: t.pihak_id };
+    $('#txJenis').hidden = true;
+  }
 
   renderTxRows();
   setTimeout(() => $('#txNominal').focus(), 120);
@@ -1365,7 +1431,18 @@ function renderTxRows() {
   const objKantong = id => Store.kantong(id) || {};
 
   if (TX.jenis === 'keluar' || TX.jenis === 'masuk') {
-    w.appendChild(pickRow('Dari / ke tempat', namaAkun(TX.akun_id), 'Pilih', pilihAkun('akun_id', 'Pilih tempat')));
+    if (TX.piutang) {
+      const ph = Store.pihak(TX.piutang.pihak_id);
+      w.appendChild(pickRow(TX.piutang.arah === 'keluar' ? 'Dipinjam oleh' : 'Dibayar oleh',
+        ph ? ph.nama : '', 'Pilih orang', () => pilihPeminjam({
+          judul: TX.piutang.arah === 'keluar' ? 'Dipinjamkan ke siapa?' : 'Dibayar oleh siapa?',
+          terpilih: TX.piutang.pihak_id,
+          onPilih: p => { TX.piutang.pihak_id = p.id; renderTxRows(); }
+        })));
+    }
+
+    w.appendChild(pickRow(TX.piutang && TX.piutang.arah === 'masuk' ? 'Masuk ke tempat' : 'Dari / ke tempat',
+      namaAkun(TX.akun_id), 'Pilih', pilihAkun('akun_id', 'Pilih tempat')));
 
     if (!sederhana) {
       const k = objKantong(TX.kantong_id);
@@ -1375,7 +1452,7 @@ function renderTxRows() {
 
     const tipe = TX.jenis === 'keluar' ? 'pengeluaran' : 'pemasukan';
     const kat = Store.kategori(TX.kategori_id);
-    w.appendChild(pickRow('Kategori', kat ? kat.nama : '', 'Pilih', () => Modal.pilih({
+    if (!TX.piutang) w.appendChild(pickRow('Kategori', kat ? kat.nama : '', 'Pilih', () => Modal.pilih({
       judul:'Kategori ' + tipe,
       opsi: db.kategori.filter(k => k.tipe === tipe).map(k => ({ id:k.id, nama:k.nama })),
       terpilih: TX.kategori_id,
@@ -1451,10 +1528,20 @@ function simpanTx() {
   };
 
   if (TX.jenis === 'keluar' || TX.jenis === 'masuk') {
-    if (!TX.kategori_id || !Store.kategori(TX.kategori_id))
-      return gagal('Pilih kategori dulu.');
-    calon.jenis = TX.jenis;
-    calon.kategori_id = TX.kategori_id;
+    if (TX.piutang) {
+      if (!TX.piutang.pihak_id || !Store.pihak(TX.piutang.pihak_id))
+        return gagal(TX.piutang.arah === 'keluar' ? 'Pilih siapa yang meminjam.' : 'Pilih siapa yang membayar.');
+      calon.pihak_id = TX.piutang.pihak_id;
+      /* saat mengoreksi, kategori lama dipertahankan */
+      calon.kategori_id = (TX.kategori_id && Store.kategori(TX.kategori_id))
+        ? TX.kategori_id : Store.kategoriPiutang(TX.piutang.arah).id;
+      calon.jenis = TX.piutang.arah;
+    } else {
+      if (!TX.kategori_id || !Store.kategori(TX.kategori_id))
+        return gagal('Pilih kategori dulu.');
+      calon.jenis = TX.jenis;
+      calon.kategori_id = TX.kategori_id;
+    }
     /* saldo awal yang dikoreksi tetap saldo awal selama arahnya
        tidak diubah pengguna — kalau tidak, angkanya pindah ke
        laporan pemasukan dan arus kas bulan itu ikut melar. */
@@ -1483,6 +1570,20 @@ function simpanTx() {
   const dbUji = TX.edit
     ? Object.assign({}, Store.db, { transaksi: Store.db.transaksi.filter(t => t.id !== TX.edit) })
     : Store.db;
+
+  /* Pembayaran tidak boleh melebihi sisa piutang orang itu. Kalau memang
+     ada bonus atau bunga, catat terpisah sebagai pemasukan biasa. */
+  if (TX.piutang && TX.piutang.arah === 'masuk') {
+    const o = Calc.piutang(dbUji).orang[TX.piutang.pihak_id];
+    const sisa = o ? Math.max(0, o.sisa) : 0;
+    if (nominal > sisa) {
+      const nama = (Store.pihak(TX.piutang.pihak_id) || {}).nama || 'orang itu';
+      return gagal(sisa > 0
+        ? `Sisa piutang ${nama} cuma ${rp(sisa)}.`
+        : `${nama} tidak punya sisa piutang.`);
+    }
+  }
+
   const dampak = Calc.cekDampak(dbUji, calon);
   if (dampak.length) {
     const d = dampak[0];
@@ -1602,6 +1703,10 @@ function bukaPisahRekening(calon, info) {
    rekening. Sama seperti finalTx, tapi tidak pernah untuk TX.edit:
    koreksi transaksi yang sudah dipisah tetap ditangani satu per satu. */
 function finalTxTerpisah(legs) {
+  if (legs.some(l => Calc.cekDampak(Store.db, l).length)) {
+    toast('Saldo berubah sejak dibuka. Tidak ada yang tersimpan — cek lagi.');
+    return;
+  }
   legs.forEach(l => Store.catat(l));
 
   if (TX.pengingat) {
@@ -1633,7 +1738,12 @@ function finalTx(calon) {
     return;
   }
 
-  Store.catat(calon);
+  if (!Store.catat(calon)) {
+    const err = $('#txError');
+    err.textContent = 'Saldo tidak cukup untuk ini. Tidak ada yang tersimpan.';
+    err.hidden = false;
+    return;
+  }
 
   /* Baru sekarang pengingatnya dianggap terjawab. */
   if (TX.pengingat) {
@@ -2634,6 +2744,13 @@ function dialogAturTitipan() {
           mx[ak][kt] = sel(ak, kt) + n;
         };
 
+        /* Rencana dikumpulkan dulu dan baru dicatat kalau SELURUHNYA cukup.
+           Dulu setiap langkah langsung dicatat, jadi kalau langkah terakhir
+           gagal, langkah sebelumnya sudah tersimpan setengah jalan — dan
+           sisa yang tidak tertampung dipaksa jadi minus di satu rekening. */
+        const rencana = [];
+        let kurang = null;
+
         /* Satu perpindahan dipecah ke beberapa tempat kalau memang
            uangnya tersebar — mengikuti isi sebenarnya, dari yang
            paling banyak. */
@@ -2651,29 +2768,14 @@ function dialogAturTitipan() {
             geser(a.id, tujuan, ambil);
             sisa -= ambil;
             n++;
-            Store.catat({
+            rencana.push({
               jenis:'transfer_kantong', nominal: ambil,
               akun_id: a.id, kantong_id: asal, kantong_tujuan_id: tujuan,
               keterangan: 'Penyesuaian dana titipan — ' + nama
             });
           });
 
-          /* Tidak cukup di mana pun. Sisanya tetap dicatat di tempat
-             dengan isi terbanyak supaya angkanya jujur dan minusnya
-             terlihat, bukan diam-diam dibuang. */
-          if (sisa > 0) {
-            const a = urut[0] || db.akun[0];
-            if (a) {
-              geser(a.id, asal, -sisa);
-              geser(a.id, tujuan, sisa);
-              n++;
-              Store.catat({
-                jenis:'transfer_kantong', nominal: sisa,
-                akun_id: a.id, kantong_id: asal, kantong_tujuan_id: tujuan,
-                keterangan: 'Penyesuaian dana titipan — ' + nama
-              });
-            }
-          }
+          if (sisa > 0 && !kurang) kurang = nama;
           return n;
         };
 
@@ -2690,6 +2792,12 @@ function dialogAturTitipan() {
         titipan.filter(k => beda(k) > 0).forEach(k => {
           jumlahUbah += pindahkan(pribadi.id, k.id, beda(k), k.nama) ? 1 : 0;
         });
+
+        if (kurang) {
+          toast('Uang di ' + kurang + ' tidak cukup di tempat mana pun. Tidak ada yang diubah.');
+          return;
+        }
+        rencana.forEach(l => Store.catat(l));
 
         Modal.tutup();
         segarkan();
@@ -2782,14 +2890,24 @@ function pesanTakBisaHapus(alasan) {
 
 function ubahAkun(a) {
   const terkunci = Store.terkunci();
-  const saldoKini = Calc.ringkas(Store.db).saldoAkun[a.id] || 0;
+  const db = Store.db;
+  const matriks = Calc.matriks(db);
+  const sel = kt => (matriks[a.id] || {})[kt.id] || 0;
 
+  /* Saldo diisi per sumber dana, karena saldo rekening itu sendiri
+     terdiri dari beberapa sumber dana. Sumber dana yang belum pernah
+     punya uang di rekening ini tetap muncul, supaya bisa diisi. */
+  const sumber = db.kantong.slice();
   const medan = [{ nama:'nama', label:'Nama tampilan', nilai:a.nama }];
   if (terkunci) {
-    medan.push({ nama:'_saldo', label:'Saldo', tipe:'statis', nilai: rp(saldoKini) });
+    sumber.forEach(k => {
+      if (sel(k) !== 0) medan.push({ nama:'_' + k.id, label: k.nama, tipe:'statis', nilai: rp(sel(k)) });
+    });
   } else {
-    medan.push({ nama:'saldo', label:'Saldo sebenarnya', tipe:'angka',
-                 nilai: saldoKini, placeholder:'0' });
+    sumber.forEach(k => medan.push({
+      nama: 'saldo_' + k.id, label: 'Saldo di ' + k.nama, tipe:'angka',
+      nilai: sel(k), placeholder:'0'
+    }));
   }
 
   Modal.form({
@@ -2797,13 +2915,12 @@ function ubahAkun(a) {
     medan,
     onSimpan: v => {
       if (!v.nama) return 'Nama tidak boleh kosong.';
-      a.nama = v.nama;
-
-      if (!terkunci && v.saldo !== saldoKini) {
-        const selisih = v.saldo - saldoKini;
-        Store.sesuaikanSaldo(a.id, v.saldo);
-        toast('Selisih ' + (selisih > 0 ? '+' : '') + rp(selisih) + ' dicatat sebagai penyesuaian');
+      if (!terkunci) {
+        const minus = sumber.find(k => (Number(v['saldo_' + k.id]) || 0) < 0);
+        if (minus) return 'Saldo di ' + minus.nama + ' tidak boleh minus.';
+        sumber.forEach(k => Store.sesuaikanSaldo(a.id, k.id, Number(v['saldo_' + k.id]) || 0));
       }
+      a.nama = v.nama;
       Store.simpan(); renderProfil();
     }
   });

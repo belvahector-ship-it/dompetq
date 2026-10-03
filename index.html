@@ -186,6 +186,9 @@
       <small>Uang saya bersih</small>
       <div class="hero-num" id="heroBersih">Rp 0</div>
       <div class="hero-sub" id="heroSub"></div>
+      <!-- Uang yang sedang dipinjam orang: saldo fisik tetap apa adanya,
+           ini hanya memberi tahu bahwa seharusnya lebih. -->
+      <button class="hero-proyeksi" id="heroProyeksi" hidden></button>
     </div>
 
     <!-- Sesi Google yang masih diingat tapi butuh satu ketukan untuk
@@ -193,6 +196,8 @@
     <div id="sambungBox"></div>
 
     <div id="warnBox"></div>
+
+    <div id="piutangBox"></div>
 
     <!-- Pengingat yang belum dijawab. Diletakkan di atas daftar
          rekening: yang paling sering bikin angka meleset adalah gaji
@@ -302,6 +307,31 @@
   </div>
 </section>
 
+<!-- ══════════════ PIUTANG ══════════════
+     Bukan tab: dibuka dari beranda, jadi navigasi bawah tidak bertambah. -->
+<section class="screen" id="scr-piutang" hidden>
+  <header class="topbar">
+    <div>
+      <small class="muted">Uang yang dipinjam orang</small>
+      <h1>Piutang</h1>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="piutangKembali">Kembali</button>
+  </header>
+  <div class="scroll">
+    <div id="piutangUtama">
+      <div class="stat-grid" id="piutangStat"></div>
+      <p class="fineprint" id="piutangCatatan" hidden></p>
+      <button class="btn btn-primary btn-block" id="piutangBaru">+ Pinjamkan uang</button>
+      <div id="piutangRapikanBox"></div>
+      <h3 class="sec-title" id="stPiutang">Belum kembali</h3>
+      <div class="pt-list" id="piutangDaftar"></div>
+      <div id="piutangLunas"></div>
+    </div>
+    <div id="piutangRapikan" hidden></div>
+    <div class="pad-bottom"></div>
+  </div>
+</section>
+
 <!-- ══════════════ BOTTOM NAV ══════════════ -->
 <nav id="bottomnav" hidden>
   <button data-nav="dashboard" class="active">
@@ -376,6 +406,7 @@
 <script src="js/pengingat.js"></script>
 <script src="js/calc.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/piutang.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

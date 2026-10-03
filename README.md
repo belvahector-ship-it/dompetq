@@ -279,6 +279,7 @@ js/sheets.js      login Google, SheetsAdapter, logika sinkron
 js/pengingat.js   jadwal, jatuh tempo, notifikasi
 js/calc.js        semua perhitungan saldo (matriks akun × sumber dana)
 js/ui.js          format rupiah/tanggal, modal, toast
+js/piutang.js     layar piutang: uang yang dipinjam orang, rapikan catatan lama
 js/app.js         routing, onboarding, layar
 img/              maskot, ilustrasi, ikon aplikasi
 img/sumber/       PNG asli dari generator, sebelum diproses
