@@ -20,7 +20,7 @@ function dbKosong() {
                 /* kunci saldo — lihat Store.kunci* di bawah */
                 kunci_hash:'', kunci_garam:'', saldo_terkunci:false },
     akun:     [],   // {id,nama,bank_kode,jenis,is_default,urutan,aktif}
-    kantong:  [],   // {id,nama,jenis,is_default,warna,catatan}
+    kantong:  [],   // {id,nama,jenis,is_default,warna,catatan,arsip}
     kategori: [],   // {id,nama,tipe,ikon}
     pihak:    [],   // {id,nama,tipe,kontak}
     transaksi:[],   // lihat konsep.md §6.3
@@ -472,6 +472,40 @@ const Store = {
     };
     this.db.kantong.push(k); this.simpan(); return k;
   },
+  /* Sumber dana yang bisa dipilih untuk catatan baru. Yang diarsipkan
+     tetap ada (riwayat lama menunjuk ke sana) tapi tidak ditawarkan lagi. */
+  kantongAktif() { return this.db.kantong.filter(k => !k.arsip); },
+
+  /* Sumber dana dengan jenis pribadi yang dipakai sebagai default. */
+  jadikanDefaultKantong(id) {
+    const k = this.kantong(id);
+    if (!k || k.arsip || k.jenis !== 'milik_sendiri') return false;
+    this.db.kantong.forEach(x => { x.is_default = x.id === id; });
+    this.simpan();
+    return true;
+  },
+
+  /* Arsip hanya boleh kalau tidak ada uang tersisa di sumber dana ini di
+     rekening mana pun — uang tidak boleh ikut tersembunyi. */
+  arsipkanKantong(id, arsip) {
+    const k = this.kantong(id);
+    if (!k) return { ok:false, alasan:'Sumber dana tidak ditemukan.' };
+    if (!arsip) { k.arsip = false; this.simpan(); return { ok:true }; }
+
+    const m = Calc.matriks(this.db);
+    const masihAda = Object.keys(m).some(ak => (m[ak][id] || 0) !== 0);
+    if (masihAda) return { ok:false, alasan:'Masih ada saldo di sumber dana ini. Pindahkan dulu sampai Rp 0.' };
+    if ((this.db.pengingat || []).some(p => p.kantong_id === id))
+      return { ok:false, alasan:'Masih dipakai pengingat. Ubah pengingatnya dulu.' };
+    const pengganti = this.db.kantong.find(x => x.id !== id && !x.arsip && x.jenis === 'milik_sendiri');
+    if (!pengganti) return { ok:false, alasan:'Harus ada minimal satu sumber dana pribadi yang aktif.' };
+
+    k.arsip = true;
+    if (k.is_default) { k.is_default = false; pengganti.is_default = true; }
+    this.simpan();
+    return { ok:true };
+  },
+
   hapusKantong(id) {
     const dipakai = this.db.transaksi.some(
       t => t.kantong_id === id || t.kantong_tujuan_id === id);
@@ -517,7 +551,7 @@ const Store = {
     /* Setiap catatan harus menunjuk rekening dan sumber dana yang ada,
        supaya total rekening selalu sama dengan total sumber dana. */
     const adaAkun = id => !id || this.db.akun.some(a => a.id === id);
-    const adaKantong = id => !id || this.db.kantong.some(k => k.id === id);
+    const adaKantong = id => !id || this.db.kantong.some(k => k.id === id && !k.arsip);
     if (!adaAkun(t.akun_id) || !adaAkun(t.akun_tujuan_id) ||
         !adaKantong(t.kantong_id) || !adaKantong(t.kantong_tujuan_id)) return null;
 
@@ -617,7 +651,11 @@ const Store = {
   kategori(id) { return this.db.kategori.find(k => k.id === id); },
 
   akunDefault()    { return this.db.akun.find(a => a.is_default) || this.db.akun[0]; },
-  kantongDefault() { return this.db.kantong.find(k => k.is_default) || this.db.kantong[0]; },
+  kantongDefault() {
+    const aktif = this.kantongAktif();
+    return aktif.find(k => k.is_default) || aktif.find(k => k.jenis === 'milik_sendiri') ||
+           aktif[0] || this.db.kantong[0];
+  },
 
   /* true kalau pengguna tidak memegang uang titipan sama sekali.
      Seluruh UI sumber dana disembunyikan. (konsep.md §3.2 aturan 4) */
@@ -646,14 +684,24 @@ const Store = {
       tipe: selisih > 0 ? 'pemasukan' : 'pengeluaran'
     });
 
-    return this.catat({
+    const tx = {
       jenis: selisih > 0 ? 'masuk' : 'keluar',
       nominal: Math.abs(selisih),
       akun_id: akunId,
       kantong_id: kantongId,
       kategori_id: kat.id,
       keterangan: 'Penyesuaian saldo'
-    });
+    };
+
+    /* Sumber dana yang diarsipkan hanya boleh dikosongkan, tidak diisi. */
+    const k = this.kantong(kantongId);
+    if (k && k.arsip) {
+      if (target !== 0) return null;
+      const hasil = this._tambahTx(tx);
+      this.simpanSekarang();
+      return hasil;
+    }
+    return this.catat(tx);
   },
 
   /* ── piutang ──

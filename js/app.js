@@ -252,7 +252,7 @@ const OB = {
   nama: '', email: '',
   akun: [],            // {key,nama,bank_kode,jenis,saldo}
   punyaTitipan: null,  // true/false
-  namaPribadi: 'Uang Pribadi',
+  namaPribadi: '',
   titipan: [],         // {key,nama}
   titipanNominal: {},  // {kantongKey: total} — cara utama, tanpa memilah tempat
   modeRinci: false,    // true kalau pengguna memilih mengatur sendiri per tempat
@@ -359,7 +359,7 @@ const OB = {
       if (this.punyaTitipan && !this.titipan.length) {
         toast('Tambahkan minimal satu sumber dana titipan'); return;
       }
-      if (this.punyaTitipan && !this.namaPribadi.trim()) this.namaPribadi = 'Uang Pribadi';
+      if (this.punyaTitipan && !this.namaPribadi.trim()) this.namaPribadi = 'Sumber utama';
     }
     if (s === 4) {
       // lompati matriks kalau tidak ada titipan
@@ -597,7 +597,7 @@ const OB = {
 
   /* ── matriks akun × sumber dana (mode rinci, opsional) ── */
   daftarKantong() {
-    return [{ key:'_pribadi', nama: this.namaPribadi || 'Uang Pribadi', jenis:'milik_sendiri' }]
+    return [{ key:'_pribadi', nama: this.namaPribadi || 'Sumber utama', jenis:'milik_sendiri' }]
       .concat(this.titipan.map(t => ({ key:t.key, nama:t.nama, jenis:'titipan' })));
   },
 
@@ -699,7 +699,7 @@ const OB = {
     // sumber dana
     const petaKantong = {};
     const pribadi = Store.tambahKantong({
-      nama: this.punyaTitipan ? (this.namaPribadi || 'Uang Pribadi') : 'Uang Saya',
+      nama: this.punyaTitipan ? (this.namaPribadi || 'Sumber utama') : 'Uang Saya',
       jenis: 'milik_sendiri'
     });
     petaKantong['_pribadi'] = pribadi.id;
@@ -873,14 +873,13 @@ function renderDashboard() {
   $('#dashKantongWrap').hidden = sederhana;
   if (!sederhana) {
     const wk = kosong($('#dashKantong'));
-    db.kantong.forEach(k => {
+    kantongTampil(r.matriks).forEach(k => {
       const v = r.saldoKantong[k.id] || 0;
       const dipinjam = pt.perKantong[k.id] || 0;
       wk.appendChild(el('div', { class:'kt-row' }, [
         el('div', { class:'kt-dot', style:'background:' + k.warna }),
         el('div', { class:'kt-nm' }, k.nama),
-        el('span', { class:'tag ' + (k.jenis === 'titipan' ? 'titipan' : 'milik') },
-           k.jenis === 'titipan' ? 'titipan' : 'milik saya'),
+        el('span', { class:'tag ' + (k.jenis === 'titipan' ? 'titipan' : 'milik') }, labelJenis(k)),
         el('div', { class:'kt-val' + (v < 0 ? ' neg' : '') }, rp(v)),
         dipinjam > 0 ? el('div', { class:'kt-pinjam' }, '+' + rp(dipinjam) + ' sedang dipinjam orang') : null
       ]));
@@ -1267,9 +1266,21 @@ function pasangSheetInput() {
    Default formulir mengikuti ini, bukan sumber dana default global —
    kalau tidak, rekening berisi 61 juta di KUP bPd tampak "Rp 0" hanya
    karena Uang Pribadi kebetulan kosong. */
+/* Label jenis sumber dana. Pribadi/Titipan adalah ATRIBUT sumber dana,
+   bukan sumber dana itu sendiri. */
+function labelJenis(k) { return k.jenis === 'titipan' ? 'Titipan' : 'Pribadi'; }
+
+/* Sumber dana yang ditampilkan di daftar: yang aktif, plus yang diarsipkan
+   tapi ternyata masih punya saldo — uang tidak boleh tersembunyi. */
+function kantongTampil(m) {
+  m = m || Calc.matriks(Store.db);
+  const adaIsi = id => Object.keys(m).some(ak => (m[ak][id] || 0) !== 0);
+  return Store.db.kantong.filter(k => !k.arsip || adaIsi(k.id));
+}
+
 function kantongTerisi(akunId) {
   const sel = Calc.matriks(Store.db)[akunId] || {};
-  const milik = Store.db.kantong.filter(k => k.jenis !== 'titipan');
+  const milik = Store.kantongAktif().filter(k => k.jenis !== 'titipan');
   const terbaik = milik.slice().sort((a, b) => (sel[b.id] || 0) - (sel[a.id] || 0))[0];
   return (terbaik && (sel[terbaik.id] || 0) > 0) ? terbaik : Store.kantongDefault();
 }
@@ -1450,9 +1461,9 @@ function renderTxRows() {
     const namaAk = (Store.akun(TX.akun_id) || {}).nama || '';
     return Modal.pilih({
     judul,
-    opsi: db.kantong.map(k => ({
-      id:k.id, nama:k.nama, ikon: k.jenis === 'titipan' ? 'T' : 'S', warna:k.warna,
-      ket: (k.jenis === 'titipan' ? 'Titipan' : 'Milikmu') + (namaAk ? ' · isi di ' + namaAk : ''),
+    opsi: Store.kantongAktif().map(k => ({
+      id:k.id, nama:k.nama, ikon: k.jenis === 'titipan' ? 'T' : 'P', warna:k.warna,
+      ket: labelJenis(k) + (namaAk ? ' · isi di ' + namaAk : ''),
       kanan: rp(selAkun[k.id] || 0)
     })),
     terpilih: TX[field],
@@ -1634,7 +1645,7 @@ function simpanTx() {
       /* Sumber dana milik sendiri lain di rekening yang sama yang cukup —
          tawarkan langsung, supaya pengguna tidak perlu mencari sendiri. */
       const mx = Calc.matriks(dbUji);
-      const alt = Store.db.kantong.find(k => k.id !== calon.kantong_id &&
+      const alt = Store.kantongAktif().find(k => k.id !== calon.kantong_id &&
         k.jenis === 'milik_sendiri' && ((mx[calon.akun_id] || {})[k.id] || 0) >= nominal);
       /* Sama-sama uang milikmu di rekening yang sama: langsung pakai yang
          ada isinya, tanpa bertanya. Titipan tidak pernah dipakai otomatis. */
@@ -2127,10 +2138,10 @@ function pasangProfil() {
   $('#mgAddKantong').onclick = () => Modal.form({
     judul:'Sumber dana baru',
     medan: [
-      { nama:'nama', label:'Nama', placeholder:'mis. Kas RT' },
+      { nama:'nama', label:'Nama sumber dana', placeholder:'mis. KUP BPD, Gaji, Kas RT' },
       { nama:'jenis', label:'Jenis', tipe:'select', opsi:[
-        { v:'titipan', t:'Titipan — bukan milik saya' },
-        { v:'milik_sendiri', t:'Milik saya sendiri' }
+        { v:'milik_sendiri', t:'Pribadi — milik saya' },
+        { v:'titipan', t:'Titipan — bukan milik saya' }
       ]}
     ],
     onSimpan: v => {
@@ -2445,12 +2456,12 @@ function renderProfil() {
   /* sumber dana */
   const wk = kosong($('#mgKantong'));
   db.kantong.forEach(k => {
-    wk.appendChild(el('div', { class:'mg' }, [
+    wk.appendChild(el('div', { class:'mg', style: k.arsip ? 'opacity:.55' : null }, [
       el('div', { class:'kt-dot', style:'background:' + k.warna }),
       el('div', { class:'mg-body' }, [
         el('b', null, k.nama),
-        el('small', null, rp(r.saldoKantong[k.id] || 0) + ' · ' +
-          (k.jenis === 'titipan' ? 'Titipan' : 'Milik saya'))
+        el('small', null, rp(r.saldoKantong[k.id] || 0) + ' · ' + labelJenis(k) +
+          (k.is_default && !k.arsip ? ' · default' : '') + (k.arsip ? ' · diarsipkan' : ''))
       ]),
       el('button', { class:'mg-act', onclick: () => ubahKantong(k) }, 'Ubah')
     ]));
@@ -2707,7 +2718,7 @@ function bukaInputDariPengingat(p, tanggal, jatuhStr) {
 function dialogAturTitipan() {
   const db = Store.db;
   const titipan = db.kantong.filter(k => k.jenis === 'titipan');
-  const pribadi = db.kantong.find(k => k.jenis === 'milik_sendiri');
+  const pribadi = Store.kantongDefault();
 
   if (!titipan.length) {
     toast('Belum ada sumber dana titipan');
@@ -2943,7 +2954,7 @@ function ubahAkun(a) {
   /* Saldo diisi per sumber dana, karena saldo rekening itu sendiri
      terdiri dari beberapa sumber dana. Sumber dana yang belum pernah
      punya uang di rekening ini tetap muncul, supaya bisa diisi. */
-  const sumber = db.kantong.slice();
+  const sumber = db.kantong.filter(k => !k.arsip || sel(k) !== 0);
   const medan = [{ nama:'nama', label:'Nama tampilan', nilai:a.nama }];
   if (terkunci) {
     sumber.forEach(k => {
@@ -2993,10 +3004,10 @@ function ubahKantong(k) {
   Modal.form({
     judul:'Ubah sumber dana',
     medan: [
-      { nama:'nama', label:'Nama', nilai:k.nama },
+      { nama:'nama', label:'Nama sumber dana', nilai:k.nama },
       { nama:'jenis', label:'Jenis', tipe:'select', nilai:k.jenis, opsi:[
-        { v:'titipan', t:'Titipan — bukan milik saya' },
-        { v:'milik_sendiri', t:'Milik saya sendiri' }
+        { v:'milik_sendiri', t:'Pribadi — milik saya' },
+        { v:'titipan', t:'Titipan — bukan milik saya' }
       ]}
     ],
     onSimpan: v => {
@@ -3026,5 +3037,22 @@ function ubahKantong(k) {
         else { Modal.tutup(); renderProfil(); }
       }
     }, 'Hapus'), $('#modalActions').firstChild);
+
+    /* Sumber dana yang sudah dipakai riwayat tidak bisa dihapus, tapi bisa
+       diarsipkan: tidak ditawarkan lagi, riwayatnya tetap utuh. */
+    const ekstra = el('div', { style:'display:flex;flex-direction:column;gap:8px;margin-top:4px' });
+    if (!k.arsip && k.jenis === 'milik_sendiri' && !k.is_default) {
+      ekstra.appendChild(el('button', { class:'btn btn-outline btn-block', onclick: () => {
+        Store.jadikanDefaultKantong(k.id); Modal.tutup(); renderProfil();
+        toast(k.nama + ' jadi sumber dana default');
+      } }, 'Jadikan default'));
+    }
+    ekstra.appendChild(el('button', { class:'btn btn-outline btn-block', onclick: () => {
+      const h = Store.arsipkanKantong(k.id, !k.arsip);
+      if (!h.ok) { toast(h.alasan); return; }
+      Modal.tutup(); renderProfil();
+      toast(k.arsip ? k.nama + ' diarsipkan' : k.nama + ' aktif lagi');
+    } }, k.arsip ? 'Aktifkan lagi' : 'Arsipkan (sembunyikan dari pilihan)'));
+    $('#modalBody').appendChild(ekstra);
   }, 10);
 }

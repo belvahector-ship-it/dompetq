@@ -23,7 +23,7 @@ const SKEMA_SHEET = {
   profil:    ['nama','email','tanggal_mulai','versi_skema',
               'kunci_hash','kunci_garam','saldo_terkunci'],
   akun:      ['id','nama','bank_kode','jenis','is_default','urutan','aktif'],
-  kantong:   ['id','nama','jenis','is_default','warna','catatan'],
+  kantong:   ['id','nama','jenis','is_default','warna','catatan','arsip'],
   kategori:  ['id','nama','tipe','induk_id','ikon'],
   pihak:     ['id','nama','tipe','kontak'],
   transaksi: ['id','timestamp','dibuat_pada','jenis','nominal',
@@ -37,7 +37,7 @@ const SKEMA_SHEET = {
 
 /* Kolom yang harus kembali jadi boolean/number saat dibaca —
    Sheets mengembalikan semuanya sebagai string. */
-const KOLOM_BOOL   = new Set(['is_default','aktif','saldo_terkunci']);
+const KOLOM_BOOL   = new Set(['is_default','aktif','saldo_terkunci','arsip']);
 const KOLOM_ANGKA  = new Set(['nominal','urutan','versi_skema','jadwal_nilai']);
 
 
