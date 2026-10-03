@@ -1263,8 +1263,20 @@ function pasangSheetInput() {
   $('#txSave').onclick = simpanTx;
 }
 
+/* Sumber dana milik sendiri yang paling banyak isinya di rekening ini.
+   Default formulir mengikuti ini, bukan sumber dana default global —
+   kalau tidak, rekening berisi 61 juta di KUP bPd tampak "Rp 0" hanya
+   karena Uang Pribadi kebetulan kosong. */
+function kantongTerisi(akunId) {
+  const sel = Calc.matriks(Store.db)[akunId] || {};
+  const milik = Store.db.kantong.filter(k => k.jenis !== 'titipan');
+  const terbaik = milik.slice().sort((a, b) => (sel[b.id] || 0) - (sel[a.id] || 0))[0];
+  return (terbaik && (sel[terbaik.id] || 0) > 0) ? terbaik : Store.kantongDefault();
+}
+
 function bukaInput() {
-  const ak = Store.akunDefault(), kt = Store.kantongDefault();
+  const ak = Store.akunDefault();
+  const kt = ak ? kantongTerisi(ak.id) : null;
   if (!ak || !kt) { toast('Tambahkan akun dulu di Profil'); return; }
 
   TX.jenis = 'keluar'; TX.sub = 'akun';
@@ -1423,19 +1435,30 @@ function renderTxRows() {
       kanan: rp(saldoAkun[a.id] || 0)
     })),
     terpilih: TX[field],
-    onPilih: o => { TX[field] = o.id; renderTxRows(); },
+    onPilih: o => {
+      TX[field] = o.id;
+      /* ganti rekening = ikut ganti ke sumber dana pribadi yang ada isinya */
+      const kini = Store.kantong(TX.kantong_id);
+      if (field === 'akun_id' && (!kini || kini.jenis !== 'titipan')) TX.kantong_id = kantongTerisi(o.id).id;
+      renderTxRows();
+    },
     tambah: { label:'+ Tambah tempat baru', aksi: () => dialogTambahAkun(id => { TX[field] = id; renderTxRows(); }) }
   });
 
-  const pilihKantong = (field, judul) => () => Modal.pilih({
+  const pilihKantong = (field, judul) => () => {
+    const selAkun = Calc.matriks(db)[TX.akun_id] || {};
+    const namaAk = (Store.akun(TX.akun_id) || {}).nama || '';
+    return Modal.pilih({
     judul,
     opsi: db.kantong.map(k => ({
       id:k.id, nama:k.nama, ikon: k.jenis === 'titipan' ? 'T' : 'S', warna:k.warna,
-      ket: k.jenis === 'titipan' ? 'Titipan — bukan milikmu' : 'Milikmu sendiri'
+      ket: (k.jenis === 'titipan' ? 'Titipan' : 'Milikmu') + (namaAk ? ' · isi di ' + namaAk : ''),
+      kanan: rp(selAkun[k.id] || 0)
     })),
     terpilih: TX[field],
     onPilih: o => { TX[field] = o.id; renderTxRows(); }
   });
+  };
 
   const namaAkun = id => (Store.akun(id) || {}).nama;
   const objKantong = id => Store.kantong(id) || {};
@@ -1613,16 +1636,12 @@ function simpanTx() {
       const mx = Calc.matriks(dbUji);
       const alt = Store.db.kantong.find(k => k.id !== calon.kantong_id &&
         k.jenis === 'milik_sendiri' && ((mx[calon.akun_id] || {})[k.id] || 0) >= nominal);
+      /* Sama-sama uang milikmu di rekening yang sama: langsung pakai yang
+         ada isinya, tanpa bertanya. Titipan tidak pernah dipakai otomatis. */
       if (alt && d.kantong.jenis === 'milik_sendiri') {
-        const tersediaAlt = (mx[calon.akun_id] || {})[alt.id] || 0;
-        Modal.konfirmasi({
-          judul: 'Pakai ' + alt.nama + '?',
-          pesan: namaKantong + ' di ' + namaAkun + ' cuma ' + rp(Math.max(0, d.sesudah + nominal)) +
-                 '. ' + alt.nama + ' di ' + namaAkun + ' masih ' + rp(tersediaAlt) + '. Pakai itu untuk pengeluaran ini?',
-          labelYa: 'Pakai ' + alt.nama, gayaYa: 'btn-primary',
-          onYa: () => { TX.kantong_id = alt.id; renderTxRows(); simpanTx(); }
-        });
-        return;
+        TX.kantong_id = alt.id;
+        renderTxRows();
+        return simpanTx();
       }
 
       const tersediaUtama = Math.max(0, d.sesudah + nominal);
