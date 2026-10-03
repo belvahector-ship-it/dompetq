@@ -1598,6 +1598,23 @@ function simpanTx() {
        rekening lain. Tawarkan pisah dulu sebelum menolak total —
        dari pada memaksa pengguna mencatatnya manual jadi dua baris. */
     if (calon.jenis === 'keluar' && !TX.edit && d.akun && d.kantong) {
+      /* Sumber dana milik sendiri lain di rekening yang sama yang cukup —
+         tawarkan langsung, supaya pengguna tidak perlu mencari sendiri. */
+      const mx = Calc.matriks(dbUji);
+      const alt = Store.db.kantong.find(k => k.id !== calon.kantong_id &&
+        k.jenis === 'milik_sendiri' && ((mx[calon.akun_id] || {})[k.id] || 0) >= nominal);
+      if (alt && d.kantong.jenis === 'milik_sendiri') {
+        const tersediaAlt = (mx[calon.akun_id] || {})[alt.id] || 0;
+        Modal.konfirmasi({
+          judul: 'Pakai ' + alt.nama + '?',
+          pesan: namaKantong + ' di ' + namaAkun + ' cuma ' + rp(Math.max(0, d.sesudah + nominal)) +
+                 '. ' + alt.nama + ' di ' + namaAkun + ' masih ' + rp(tersediaAlt) + '. Pakai itu untuk pengeluaran ini?',
+          labelYa: 'Pakai ' + alt.nama, gayaYa: 'btn-primary',
+          onYa: () => { TX.kantong_id = alt.id; renderTxRows(); simpanTx(); }
+        });
+        return;
+      }
+
       const tersediaUtama = Math.max(0, d.sesudah + nominal);
       const kurang = nominal - tersediaUtama;
       const lain = Calc.sumberLain(dbUji, calon.kantong_id, calon.akun_id);
