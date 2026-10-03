@@ -514,6 +514,19 @@ const Store = {
     if ((t.jenis === 'keluar' || t.jenis === 'transfer_akun' || t.jenis === 'transfer_kantong') &&
         Calc.cekDampak(this.db, t).length) return null;
 
+    /* Setiap catatan harus menunjuk rekening dan sumber dana yang ada,
+       supaya total rekening selalu sama dengan total sumber dana. */
+    const adaAkun = id => !id || this.db.akun.some(a => a.id === id);
+    const adaKantong = id => !id || this.db.kantong.some(k => k.id === id);
+    if (!adaAkun(t.akun_id) || !adaAkun(t.akun_tujuan_id) ||
+        !adaKantong(t.kantong_id) || !adaKantong(t.kantong_tujuan_id)) return null;
+
+    const tx = this._tambahTx(t);
+    this.simpanSekarang();
+    return tx;
+  },
+
+  _tambahTx(t) {
     const tx = Object.assign({
       id: uid('trx'),
       timestamp: new Date().toISOString(),
@@ -526,7 +539,6 @@ const Store = {
       reversal_dari:'', koreksi_dari:''
     }, t);
     this.db.transaksi.push(tx);
-    this.simpanSekarang();
     return tx;
   },
 
@@ -737,7 +749,7 @@ const Store = {
     for (const ak in m) for (const kt in m[ak]) {
       const v = m[ak][kt];
       if (v === 0 || (akunIds.has(ak) && kIds.has(kt))) continue;
-      this.catat({
+      this._tambahTx({
         jenis: v > 0 ? 'keluar' : 'masuk',
         nominal: Math.abs(v),
         akun_id: ak, kantong_id: kt,
@@ -746,6 +758,7 @@ const Store = {
       });
       jumlah++;
     }
+    if (jumlah) this.simpanSekarang();
     return jumlah;
   },
 

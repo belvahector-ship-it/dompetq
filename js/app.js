@@ -770,6 +770,16 @@ function renderDashboard() {
   const r  = Calc.ringkas(db);
   const sederhana = Store.modeSederhana();
 
+  const rk = Calc.rekonsiliasi(db);
+  const cek = $('#cekRekonsiliasi');
+  if (cek) {
+    cek.hidden = false;
+    cek.className = 'rekon ' + (rk.selisih === 0 && !rk.yatim.baris ? 'ok' : 'bahaya');
+    cek.textContent = rk.selisih === 0 && !rk.yatim.baris
+      ? 'Total semua rekening ' + rp(rk.totalRekening) + ' = total semua sumber dana'
+      : 'Tidak cocok: rekening ' + rp(rk.totalRekening) + ', sumber dana ' + rp(rk.totalSumber);
+  }
+
   const jam = new Date().getHours();
   $('#dashSapaan').textContent =
     jam < 11 ? 'Selamat pagi' : jam < 15 ? 'Selamat siang' :

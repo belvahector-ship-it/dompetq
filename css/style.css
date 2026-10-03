@@ -751,3 +751,8 @@ input,select{font:inherit;color:inherit}
 .rw-ringkas{display:flex;justify-content:space-between;padding:4px 0 10px;
   font-size:13px;font-weight:700;color:var(--ink-2)}
 #piutangStat .stat b{font-size:16.5px;white-space:nowrap}
+
+.rekon{font-size:12.5px;font-weight:700;padding:9px 12px;border:var(--bd) solid var(--ink);
+  border-radius:var(--r-sm);margin-bottom:12px;font-family:var(--font-num)}
+.rekon.ok{background:var(--green-soft);color:var(--green-ink)}
+.rekon.bahaya{background:var(--red-soft);color:var(--red-ink)}

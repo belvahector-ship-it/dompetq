@@ -51,6 +51,16 @@ const Calc = {
     return m;
   },
 
+  /* Hukum kekekalan uang: total semua rekening harus sama dengan total
+     semua sumber dana. Selisih hanya mungkin kalau ada catatan yang
+     merujuk rekening atau sumber dana yang sudah tidak ada. */
+  rekonsiliasi(db) {
+    const r = this.ringkas(db);
+    const totalRekening = Object.values(r.saldoAkun).reduce((s, v) => s + v, 0);
+    const totalSumber = db.kantong.reduce((s, k) => s + (r.saldoKantong[k.id] || 0), 0);
+    return { totalRekening, totalSumber, selisih: totalRekening - totalSumber, yatim: r.yatim };
+  },
+
   saldoAkun(db, m) {
     m = m || this.matriks(db);
     const out = {};
