@@ -410,13 +410,23 @@ const Calc = {
     const jumlah = harian ? 7 : 12;
     const y = kini.getFullYear(), m = kini.getMonth(), d = kini.getDate();
 
+    /* Pasangan "transaksi dikoreksi + entri pembaliknya" saling meniadakan,
+       jadi dibuang sebelum dihitung: saldo tetap sama, tapi angka masuk/keluar
+       tidak membengkak oleh koreksi. Pinjaman & pembayaran piutang tetap
+       menggerakkan saldo, hanya dipisah dari pemasukan/pengeluaran. */
+    const skip = this.idDikoreksi(db);
+    const pp = this.idPihakPiutang(db);
     const urut = [];
     for (const t of db.transaksi) {
       const w = new Date(t.timestamp).getTime();
-      if (!isFinite(w)) continue;
+      if (!isFinite(w) || skip.has(t.id)) continue;
       const n = Number(t.nominal) || 0;
-      if (t.jenis === 'masuk' || t.jenis === 'saldo_awal') urut.push({ w, d: n, masuk: true });
-      else if (t.jenis === 'keluar') urut.push({ w, d: -n, masuk: false });
+      /* sama seperti matriks(): tanpa rekening / sumber dana tidak terhitung */
+      if (!t.akun_id || !t.kantong_id) continue;
+      const utang = !!(t.pihak_id && pp.has(t.pihak_id));
+      if (t.jenis === 'saldo_awal') urut.push({ w, d: n, tipe: 'awal' });
+      else if (t.jenis === 'masuk') urut.push({ w, d: n, tipe: utang ? 'piutang' : 'masuk' });
+      else if (t.jenis === 'keluar') urut.push({ w, d: -n, tipe: utang ? 'piutang' : 'keluar' });
     }
     urut.sort((a, b) => a.w - b.w);
 
@@ -429,18 +439,21 @@ const Calc = {
 
       while (i < urut.length && urut[i].w < awal.getTime()) saldo += urut[i++].d;
       const open = saldo;
-      let hi = open, lo = open, masuk = 0, keluar = 0;
+      let hi = open, lo = open, masuk = 0, keluar = 0, awalan = 0, piutang = 0;
       /* periode berjalan menampung semua transaksi, termasuk yang
          bertanggal ke depan, supaya cocok dengan saldo di beranda */
       while (i < urut.length && (terakhir || urut[i].w < akhir.getTime())) {
         const x = urut[i++];
         saldo += x.d;
-        if (x.masuk) masuk += x.d; else keluar -= x.d;
+        if (x.tipe === 'masuk') masuk += x.d;
+        else if (x.tipe === 'keluar') keluar -= x.d;
+        else if (x.tipe === 'awal') awalan += x.d;
+        else piutang += x.d;
         if (saldo > hi) hi = saldo;
         if (saldo < lo) lo = saldo;
       }
       hasil.push({ awal, akhir, terakhir, open, close: saldo, hi, lo,
-                   masuk, keluar, net: saldo - open,
+                   masuk, keluar, awalan, piutang, net: saldo - open,
                    sampai: terakhir ? null : new Date(akhir.getTime() - 1) });
     }
     return hasil;

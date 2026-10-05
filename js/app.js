@@ -2242,7 +2242,11 @@ function dialogCandle(c, mode) {
       el('small', null, 'Untung / rugi bersih'),
       el('b', { class:kls(c.net) }, tandaRp(c.net)),
       el('small', { style:'text-transform:none;letter-spacing:0;font-weight:600' },
-        `Masuk ${rp(c.masuk)} · Keluar ${rp(c.keluar)}`)
+        [`Pemasukan ${rp(c.masuk)} · Pengeluaran ${rp(c.keluar)}`,
+         c.piutang ? el('br') : null,
+         c.piutang ? `Piutang (pinjam/bayar) ${tandaRp(c.piutang)}` : null,
+         c.awalan ? el('br') : null,
+         c.awalan ? `Saldo awal dicatat ${tandaRp(c.awalan)}` : null])
     ])
   ]));
 
