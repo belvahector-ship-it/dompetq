@@ -2297,8 +2297,6 @@ function renderGrafikTx() {
       kolom.push(sel);
       g.appendChild(sel);
 
-      g.appendChild(svgEl('line', { class:'cd-sumbu', x1:cx, x2:cx, y1:yPos(c.hi), y2:yPos(c.lo),
-        'pointer-events':'none' }));
       const yo = yPos(c.open), yc = yPos(c.close);
       const kelas = c.close > c.open ? 'cd-naik' : c.close < c.open ? 'cd-turun' : 'cd-datar';
       g.appendChild(svgEl('rect', { class:'cd-badan ' + kelas, x:cx - badan / 2,

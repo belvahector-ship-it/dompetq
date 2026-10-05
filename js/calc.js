@@ -417,25 +417,14 @@ const Calc = {
     const jumlah = harian ? new Date(y, m + 1, 0).getDate() : 12;
     const t0 = kini.getTime();
 
-    /* Pasangan "transaksi dikoreksi + entri pembaliknya" saling meniadakan,
-       jadi dibuang dari sumbu (high/low): saldo tetap sama. */
-    const skip = this.idDikoreksi(db);
-    const urut = [];
-    for (const t of db.transaksi) {
-      const w = new Date(t.timestamp).getTime();
-      if (!isFinite(w) || skip.has(t.id)) continue;
-      if (!t.akun_id || !t.kantong_id) continue;
-      const n = Number(t.nominal) || 0;
-      if (t.jenis === 'saldo_awal' || t.jenis === 'masuk') urut.push({ w, d: n });
-      else if (t.jenis === 'keluar') urut.push({ w, d: -n });
-    }
-    urut.sort((a, b) => a.w - b.w);
-
     const total = mx => db.kantong.reduce((s, k) => s +
       Object.keys(mx).reduce((a, ak) => a + ((mx[ak] || {})[k.id] || 0), 0), 0);
 
+    /* Tidak ada sumbu (high/low): jam transaksi diambil dari jam pengetikan,
+       bukan jam kejadian, jadi urutan di dalam satu hari tidak bisa dipercaya
+       dan puncak/lembahnya menyesatkan. Hanya angka pada batas 00.00 yang pasti. */
     const hasil = [];
-    let i = 0, saldo = 0, mAwal = null;
+    let mAwal = null;
     for (let k = 0; k < jumlah; k++) {
       const awal  = harian ? new Date(y, m, k + 1) : new Date(y, k, 1);
       const akhir = harian ? new Date(y, m, k + 2) : new Date(y, k + 1, 1);
@@ -443,23 +432,15 @@ const Calc = {
       const terakhir = !depan && akhir.getTime() > t0;
       if (depan) { hasil.push({ awal, akhir, depan: true, terakhir: false }); continue; }
 
-      while (i < urut.length && urut[i].w < awal.getTime()) saldo += urut[i++].d;
-      let hi = saldo, lo = saldo;
-      /* periode berjalan menampung semua transaksi, termasuk yang
-         bertanggal ke depan, supaya cocok dengan saldo di beranda */
-      while (i < urut.length && (terakhir || urut[i].w < akhir.getTime())) {
-        saldo += urut[i++].d;
-        if (saldo > hi) hi = saldo;
-        if (saldo < lo) lo = saldo;
-      }
-
+      /* periode berjalan memakai semua transaksi, termasuk yang bertanggal
+         ke depan, supaya cocok dengan saldo di beranda */
       const sampai = terakhir ? null : new Date(akhir.getTime() - 1);
       if (!mAwal) mAwal = this.matriks(db, new Date(awal.getTime() - 1));
       const mAkhir = this.matriks(db, sampai);
       const open = total(mAwal), close = total(mAkhir);
       hasil.push({ awal, akhir, depan: false, terakhir, sampai, mAwal, mAkhir,
                    open, close, net: close - open,
-                   hi: Math.max(hi, open, close), lo: Math.min(lo, open, close) });
+                   hi: Math.max(open, close), lo: Math.min(open, close) });
       mAwal = mAkhir;
     }
     return hasil;

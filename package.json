@@ -1,6 +1,6 @@
 {
   "name": "dompetq",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Pencatat keuangan pribadi yang memisahkan di mana uang berada dari milik siapa uang itu.",
   "scripts": {

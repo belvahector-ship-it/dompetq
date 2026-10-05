@@ -775,7 +775,6 @@ input,select{font:inherit;color:inherit}
 .candle svg{display:block;overflow:visible}
 .candle .cd-grid{stroke:var(--sunk);stroke-width:1}
 .candle .cd-nol{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3}
-.candle .cd-sumbu{stroke:var(--ink);stroke-width:1.6}
 .candle .cd-badan{stroke:var(--ink);stroke-width:1.6}
 .candle .cd-naik{fill:var(--green)}
 .candle .cd-turun{fill:var(--red)}
