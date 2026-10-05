@@ -2192,6 +2192,20 @@ function tickBulat(lo, hi, perkiraan) {
   return hasil;
 }
 
+/* Label sumbu: satuan (M / jt / rb) dipilih dari angka terbesar, desimalnya
+   secukupnya supaya garis bantu yang berdekatan tidak tampil sama
+   (mis. 185,02 jt · 185,04 jt, bukan 185 jt tiga kali). */
+function labelSumbu(v, tick) {
+  const besar = Math.max(...tick.map(Math.abs));
+  const [unit, nama] = besar >= 1e9 ? [1e9, ' M'] : besar >= 1e6 ? [1e6, ' jt'] :
+                       besar >= 1e4 ? [1e3, ' rb'] : [1, ''];
+  const langkah = tick.length > 1 ? Math.abs(tick[1] - tick[0]) : unit;
+  let d = 0;
+  while (d < 4 && Math.abs(langkah / unit * Math.pow(10, d) - Math.round(langkah / unit * Math.pow(10, d))) > 1e-6) d++;
+  const angka = (Math.abs(v) / unit).toFixed(d).replace('.', ',');
+  return v === 0 ? 'Rp 0' : (v < 0 ? '−' : '') + 'Rp ' + angka + nama;
+}
+
 function renderGrafikTx() {
   const wrap = $('#txGrafikWrap');
   const db = Store.db;
@@ -2222,79 +2236,99 @@ function renderGrafikTx() {
      candle terlihat, berapa pun jumlah periodenya */
   const kotak = $('#txCandle');
   kosong(kotak);
-  const LEBAR_SUMBU = 60, H = 214, atas = 10, bawah = 44;
+  const LEBAR_SUMBU = 72, H = 214, atas = 10, bawah = 44;
   const tinggi = H - atas - bawah;
   const lebarTampak = Math.max(210, (kotak.clientWidth || 300) - LEBAR_SUMBU);
   const lebar = lebarTampak / CANDLE_TAMPAK;
   const W = lebar * data.length;
   const badan = Math.min(26, lebar * 0.56);
-
-  /* Skala vertikal dari seluruh siklus, supaya tidak melompat saat digeser:
-     dasar = Rp 0 (atau nilai terendah kalau ada yang minus, + 5%),
-     puncak = nilai tertinggi + 5%. Garis bantu di angka bulat. */
-  const tertinggi = Math.max(...ada.map(c => c.hi));
-  const terendah = Math.min(...ada.map(c => c.lo));
-  let hi = tertinggi > 0 ? tertinggi * 1.05 : 1;
-  let lo = terendah < 0 ? terendah * 1.05 : 0;
-  const yPos = v => atas + (hi - v) / (hi - lo) * tinggi;
-  const tick = tickBulat(lo, hi, 4);
-
-  /* sumbu Y tetap di kiri */
+  const geser = el('div', { class:'candle-geser' });
   const sumbu = svgEl('svg', { class:'candle-sumbu', width:LEBAR_SUMBU, height:H, 'aria-hidden':'true' });
-  tick.forEach(v => sumbu.appendChild(svgEl('text',
-    { x:LEBAR_SUMBU - 5, y:yPos(v) + 3, 'text-anchor':'end' }, rpRingkas(v))));
-
   const svg = svgEl('svg', { width:W, height:H, role:'img', 'aria-label':'Grafik candle total saldo' });
-  tick.forEach(v => svg.appendChild(svgEl('line', { class:'cd-grid', x1:0, x2:W, y1:yPos(v), y2:yPos(v) })));
-  if (lo < 0 && hi > 0) {
-    svg.appendChild(svgEl('line', { class:'cd-nol', x1:0, x2:W, y1:yPos(0), y2:yPos(0) }));
-  }
-
-  const kolom = [];
-  data.forEach((c, i) => {
-    const cx = lebar * (i + 0.5);
-    const g = svgEl('g');
-    const labelX = svgEl('text', { class:'cd-x' + (c.terakhir ? ' cd-kini' : '') + (c.depan ? ' cd-depan' : ''),
-      x:cx, y:atas + tinggi + 14, 'text-anchor':'middle', 'pointer-events':'none' }, labelCandle(c, mode, false));
-
-    if (c.depan) { g.appendChild(labelX); svg.appendChild(g); return; }
-
-    const sel = svgEl('rect', { class:'cd-kol', x:i * lebar, y:atas - 4,
-      width:lebar, height:tinggi + bawah + 4, tabindex:0, role:'button',
-      'aria-label':`${labelCandle(c, mode, true)}: ${tandaRp(c.net)}` });
-    const buka = () => { kolom.forEach(r => r.classList.remove('cd-sel')); sel.classList.add('cd-sel');
-      dialogCandle(c, mode); };
-    sel.addEventListener('click', buka);
-    sel.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); buka(); } });
-    kolom.push(sel);
-    g.appendChild(sel);
-
-    g.appendChild(svgEl('line', { class:'cd-sumbu', x1:cx, x2:cx, y1:yPos(c.hi), y2:yPos(c.lo),
-      'pointer-events':'none' }));
-    const yo = yPos(c.open), yc = yPos(c.close);
-    const kelas = c.close > c.open ? 'cd-naik' : c.close < c.open ? 'cd-turun' : 'cd-datar';
-    g.appendChild(svgEl('rect', { class:'cd-badan ' + kelas, x:cx - badan / 2,
-      y:Math.min(yo, yc), width:badan, height:Math.max(2.5, Math.abs(yo - yc)), rx:2,
-      'pointer-events':'none' }));
-
-    g.appendChild(labelX);
-    g.appendChild(svgEl('text', { class:'cd-net ' + (c.net > 0 ? 'pos' : c.net < 0 ? 'neg' : ''),
-      x:cx, y:atas + tinggi + 28, 'text-anchor':'middle', 'pointer-events':'none' },
-      (c.net > 0 ? '+' : '') + rpRingkas(c.net).replace('Rp ', '')));
-    svg.appendChild(g);
-  });
-
-  const geser = el('div', { class:'candle-geser' }, svg);
+  geser.appendChild(svg);
   kotak.appendChild(el('div', { class:'candle-baris' }, [sumbu, geser]));
 
+  /* Skala vertikal mengikuti candle yang sedang terlihat di jendela:
+     dasar = terendah − 5%, puncak = tertinggi + 5%, garis bantu di angka
+     bulat. Digambar ulang hanya kalau skalanya berubah saat digeser. */
+  let skalaKini = '';
+  const gambar = () => {
+    const kiri = geser.scrollLeft;
+    const i0 = Math.max(0, Math.floor(kiri / lebar + 1e-6));
+    const i1 = Math.min(data.length - 1, Math.ceil((kiri + lebarTampak) / lebar - 1e-6) - 1);
+    let tampak = data.slice(i0, i1 + 1).filter(c => !c.depan);
+    if (!tampak.length) tampak = ada;
+
+    let hi = Math.max(...tampak.map(c => c.hi)), lo = Math.min(...tampak.map(c => c.lo));
+    const pad = hi === lo ? Math.max(1, Math.abs(hi) * 0.05) : (hi - lo) * 0.05;
+    hi += pad; lo -= pad;
+    if (skalaKini === hi + '|' + lo) return;
+    skalaKini = hi + '|' + lo;
+
+    const yPos = v => atas + (hi - v) / (hi - lo) * tinggi;
+    const tick = tickBulat(lo, hi, 4);
+
+    kosong(sumbu);
+    tick.forEach(v => sumbu.appendChild(svgEl('text',
+      { x:LEBAR_SUMBU - 5, y:yPos(v) + 3, 'text-anchor':'end' }, labelSumbu(v, tick))));
+
+    kosong(svg);
+    tick.forEach(v => svg.appendChild(svgEl('line', { class:'cd-grid', x1:0, x2:W, y1:yPos(v), y2:yPos(v) })));
+    if (lo < 0 && hi > 0) {
+      svg.appendChild(svgEl('line', { class:'cd-nol', x1:0, x2:W, y1:yPos(0), y2:yPos(0) }));
+    }
+
+    const kolom = [];
+    data.forEach((c, i) => {
+      const cx = lebar * (i + 0.5);
+      const g = svgEl('g');
+      const labelX = svgEl('text', { class:'cd-x' + (c.terakhir ? ' cd-kini' : '') + (c.depan ? ' cd-depan' : ''),
+        x:cx, y:atas + tinggi + 14, 'text-anchor':'middle', 'pointer-events':'none' }, labelCandle(c, mode, false));
+
+      if (c.depan) { g.appendChild(labelX); svg.appendChild(g); return; }
+
+      const sel = svgEl('rect', { class:'cd-kol', x:i * lebar, y:atas - 4,
+        width:lebar, height:tinggi + bawah + 4, tabindex:0, role:'button',
+        'aria-label':`${labelCandle(c, mode, true)}: ${tandaRp(c.net)}` });
+      const buka = () => { kolom.forEach(r => r.classList.remove('cd-sel')); sel.classList.add('cd-sel');
+        dialogCandle(c, mode); };
+      sel.addEventListener('click', buka);
+      sel.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); buka(); } });
+      kolom.push(sel);
+      g.appendChild(sel);
+
+      g.appendChild(svgEl('line', { class:'cd-sumbu', x1:cx, x2:cx, y1:yPos(c.hi), y2:yPos(c.lo),
+        'pointer-events':'none' }));
+      const yo = yPos(c.open), yc = yPos(c.close);
+      const kelas = c.close > c.open ? 'cd-naik' : c.close < c.open ? 'cd-turun' : 'cd-datar';
+      g.appendChild(svgEl('rect', { class:'cd-badan ' + kelas, x:cx - badan / 2,
+        y:Math.min(yo, yc), width:badan, height:Math.max(2.5, Math.abs(yo - yc)), rx:2,
+        'pointer-events':'none' }));
+
+      g.appendChild(labelX);
+      g.appendChild(svgEl('text', { class:'cd-net ' + (c.net > 0 ? 'pos' : c.net < 0 ? 'neg' : ''),
+        x:cx, y:atas + tinggi + 28, 'text-anchor':'middle', 'pointer-events':'none' },
+        (c.net > 0 ? '+' : '') + rpRingkas(c.net).replace('Rp ', '')));
+      svg.appendChild(g);
+    });
+  };
+
   /* posisi awal: periode berjalan di ujung kanan jendela; posisi geser
-     dipertahankan selama tetap di mode yang sama */
+     dipertahankan selama tetap di mode & periode yang sama */
   const iKini = data.findIndex(c => c.terakhir);
   const otomatis = iKini < 0 ? 0 : Math.max(0, (iKini + 1) * lebar - lebarTampak);
   const kunci = mode + ':' + ac.y + ':' + (mode === 'bulanan' ? 0 : ac.m);
   geser.scrollLeft = txGrafikGeser.kunci === kunci ? txGrafikGeser.kiri : otomatis;
   txGrafikGeser = { kunci, kiri:geser.scrollLeft };
-  geser.addEventListener('scroll', () => { txGrafikGeser = { kunci, kiri:geser.scrollLeft }; }, { passive:true });
+  gambar();
+
+  let menunggu = false;
+  geser.addEventListener('scroll', () => {
+    txGrafikGeser = { kunci, kiri:geser.scrollLeft };
+    if (menunggu) return;
+    menunggu = true;
+    requestAnimationFrame(() => { menunggu = false; gambar(); });
+  }, { passive:true });
 }
 
 function dialogCandle(c, mode) {

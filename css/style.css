@@ -829,3 +829,5 @@ input,select{font:inherit;color:inherit}
   background:var(--surface);font-size:22px;font-weight:800;line-height:1;box-shadow:2px 2px 0 var(--ink)}
 .cd-nav button:active:not(:disabled){transform:translate(1px,1px);box-shadow:1px 1px 0 var(--ink)}
 .cd-nav button:disabled{opacity:.3;box-shadow:none;cursor:default}
+.candle .candle-sumbu text{font-size:9px}
+.candle text.cd-x,.candle text.cd-net{font-size:8px;letter-spacing:-.2px}
