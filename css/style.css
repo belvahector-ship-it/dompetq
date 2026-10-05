@@ -762,3 +762,48 @@ input,select{font:inherit;color:inherit}
 .talangan-opsi{flex-direction:column;align-items:flex-start;text-align:left;gap:2px;margin-bottom:9px}
 .talangan-opsi small{color:var(--ink-3);font-weight:600;font-size:12px}
 .talangan-opsi[disabled]{opacity:.45;box-shadow:none;cursor:not-allowed}
+
+/* ═══════ GRAFIK CANDLE (tab Transaksi) ═══════ */
+.tx-grafik{margin:4px 0 16px;padding:12px 12px 10px;background:var(--surface);
+  border:var(--bd) solid var(--ink);border-radius:var(--r);box-shadow:var(--sh-sm)}
+.tx-grafik-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.tx-grafik-head .sec-title{margin:0}
+.seg.seg-kecil{margin:0;padding:3px;gap:3px;flex:none}
+.seg.seg-kecil button{flex:none;padding:5px 10px;font-size:12px}
+.seg.seg-kecil button.active{padding:3px 8px;background:var(--amber)}
+.candle{margin-top:8px}
+.candle svg{display:block;width:100%;height:auto;overflow:visible}
+.candle .cd-grid{stroke:var(--sunk);stroke-width:1}
+.candle .cd-nol{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3}
+.candle .cd-sumbu{stroke:var(--ink);stroke-width:1.6}
+.candle .cd-badan{stroke:var(--ink);stroke-width:1.6}
+.candle .cd-naik{fill:var(--green)}
+.candle .cd-turun{fill:var(--red)}
+.candle .cd-datar{fill:var(--ink)}
+.candle .cd-kol{fill:transparent;cursor:pointer;outline:none}
+.candle .cd-kol:hover,.candle .cd-kol:focus{fill:rgba(15,23,42,.06)}
+.candle .cd-sel{fill:var(--amber-soft)}
+.candle text{font-family:var(--font-num);font-size:9.5px;fill:var(--ink-3);font-weight:600}
+.candle text.cd-x{fill:var(--ink-2)}
+.candle text.cd-x,.candle text.cd-net{font-size:8.5px}
+.candle text.cd-net.pos{fill:var(--green-ink)}
+.candle text.cd-net.neg{fill:var(--red-ink)}
+
+.cd-detail .cd-ring{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.cd-detail .cd-ring div{background:var(--surface-alt);border:2px solid var(--ink);
+  border-radius:var(--r-sm);padding:8px 10px}
+.cd-detail .cd-ring small{display:block;color:var(--ink-3);font-weight:700;font-size:10.5px;
+  text-transform:uppercase;letter-spacing:.06em}
+.cd-detail .cd-ring b{font-family:var(--font-num);font-size:13.5px}
+.cd-detail .cd-net-box{grid-column:1 / -1}
+.cd-detail .pos{color:var(--green-ink)}
+.cd-detail .neg{color:var(--red-ink)}
+.cd-detail h4{margin:14px 0 6px;font-size:11.5px;font-weight:800;text-transform:uppercase;
+  letter-spacing:.09em}
+.cd-baris{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:14px;
+  border-bottom:1px solid var(--line-soft)}
+.cd-baris .cd-nm{flex:1;min-width:0;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cd-baris .cd-nilai{font-family:var(--font-num);font-weight:700}
+.cd-baris.cd-anak{padding-left:14px;font-size:12.5px;border-bottom:0;color:var(--ink-2)}
+.cd-baris.cd-anak .cd-nm{font-weight:600}
+.cd-baris.cd-anak .cd-nilai{font-weight:600}

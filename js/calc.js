@@ -397,6 +397,61 @@ const Calc = {
     return { masuk, keluar, selisih: masuk - keluar };
   },
 
+  /* Candlestick total saldo, dihitung per hari (7 terakhir) atau per bulan
+     (12 terakhir) dengan batas jam 00.00 waktu perangkat.
+       open  = total saldo di awal periode (00.00)
+       close = total saldo di akhir periode (periode berjalan: saldo sekarang)
+       net   = close − open  → untung/rugi bersih periode itu
+     Total saldo hanya berubah oleh uang masuk / keluar / saldo awal;
+     transfer cuma memindah, jadi tidak menggerakkan candle. */
+  candle(db, mode, sekarang) {
+    const kini = sekarang || new Date();
+    const harian = mode !== 'bulanan';
+    const jumlah = harian ? 7 : 12;
+    const y = kini.getFullYear(), m = kini.getMonth(), d = kini.getDate();
+
+    const urut = [];
+    for (const t of db.transaksi) {
+      const w = new Date(t.timestamp).getTime();
+      if (!isFinite(w)) continue;
+      const n = Number(t.nominal) || 0;
+      if (t.jenis === 'masuk' || t.jenis === 'saldo_awal') urut.push({ w, d: n, masuk: true });
+      else if (t.jenis === 'keluar') urut.push({ w, d: -n, masuk: false });
+    }
+    urut.sort((a, b) => a.w - b.w);
+
+    const hasil = [];
+    let i = 0, saldo = 0;
+    for (let k = jumlah - 1; k >= 0; k--) {
+      const awal  = harian ? new Date(y, m, d - k)     : new Date(y, m - k, 1);
+      const akhir = harian ? new Date(y, m, d - k + 1) : new Date(y, m - k + 1, 1);
+      const terakhir = k === 0;
+
+      while (i < urut.length && urut[i].w < awal.getTime()) saldo += urut[i++].d;
+      const open = saldo;
+      let hi = open, lo = open, masuk = 0, keluar = 0;
+      /* periode berjalan menampung semua transaksi, termasuk yang
+         bertanggal ke depan, supaya cocok dengan saldo di beranda */
+      while (i < urut.length && (terakhir || urut[i].w < akhir.getTime())) {
+        const x = urut[i++];
+        saldo += x.d;
+        if (x.masuk) masuk += x.d; else keluar -= x.d;
+        if (saldo > hi) hi = saldo;
+        if (saldo < lo) lo = saldo;
+      }
+      hasil.push({ awal, akhir, terakhir, open, close: saldo, hi, lo,
+                   masuk, keluar, net: saldo - open,
+                   sampai: terakhir ? null : new Date(akhir.getTime() - 1) });
+    }
+    return hasil;
+  },
+
+  /* Saldo tiap rekening × sumber dana pada akhir satu candle. */
+  saldoPadaCandle(db, c) {
+    const m = this.matriks(db, c.sampai);
+    return { matriks: m, saldoAkun: this.saldoAkun(db, m), saldoKantong: this.saldoKantong(db, m) };
+  },
+
   /* Mutasi satu sumber dana — bahan laporan pertanggungjawaban.
      (konsep.md §7) */
   mutasiKantong(db, kantongId, dari, sampai) {

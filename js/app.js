@@ -2062,10 +2062,15 @@ function dialogTambahAkun(cb) {
 function pasangTransaksi() {
   $('#txCari').oninput = renderTransaksi;
   $('#txFilterKantong').onchange = renderTransaksi;
+  $$('#txGrafikMode button').forEach(b => b.onclick = () => {
+    txGrafikMode = b.dataset.mode;
+    renderGrafikTx();
+  });
 }
 
 function renderTransaksi() {
   const db = Store.db;
+  renderGrafikTx();
   const cari = $('#txCari').value.toLowerCase().trim();
   const fk = $('#txFilterKantong');
 
@@ -2119,6 +2124,163 @@ function renderTransaksi() {
       w.appendChild(el('div', { class:'tx-day' }, h));
     }
     w.appendChild(barisTx(t));
+  });
+}
+
+/* ── grafik candle: untung/rugi bersih per hari / bulan ──
+   Satu candle = satu periode (00.00 → 00.00). Ketuk candle untuk melihat
+   saldo tiap rekening dan sumber dananya di akhir periode itu. */
+let txGrafikMode = 'harian';
+
+function svgEl(tag, attr, teks) {
+  const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const k in attr) e.setAttribute(k, attr[k]);
+  if (teks !== undefined) e.textContent = teks;
+  return e;
+}
+
+function labelCandle(c, mode, panjang) {
+  if (mode === 'bulanan') {
+    return panjang ? BULAN[c.awal.getMonth()] + ' ' + c.awal.getFullYear()
+                   : BULAN[c.awal.getMonth()].slice(0, 3);
+  }
+  return panjang ? HARI[c.awal.getDay()] + ', ' + tglPanjang(c.awal)
+                 : HARI[c.awal.getDay()].slice(0, 3) + ' ' + c.awal.getDate();
+}
+
+function tandaRp(n) { return (n > 0 ? '+' : '') + rp(n); }
+
+function renderGrafikTx() {
+  const wrap = $('#txGrafikWrap');
+  const db = Store.db;
+  wrap.hidden = !db.transaksi.length;
+  if (wrap.hidden) return;
+
+  const mode = txGrafikMode;
+  $$('#txGrafikMode button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  $('#txGrafikNote').textContent = mode === 'bulanan'
+    ? 'Total saldo 12 bulan terakhir. Tiap candle = awal bulan (00.00) sampai akhir bulan. Ketuk candle untuk rincian.'
+    : 'Total saldo 7 hari terakhir. Tiap candle = 00.00 sampai 00.00 berikutnya. Ketuk candle untuk rincian.';
+
+  const data = Calc.candle(db, mode);
+  const W = 340, H = mode === 'harian' ? 214 : 200;
+  const kiri = 54, kanan = 6, atas = 10;
+  const bawah = mode === 'harian' ? 44 : 28;
+  const tinggi = H - atas - bawah;
+
+  let lo = Math.min(...data.map(c => c.lo)), hi = Math.max(...data.map(c => c.hi));
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const pad = (hi - lo) * 0.08;
+  hi += pad; lo -= pad;
+  const yPos = v => atas + (hi - v) / (hi - lo) * tinggi;
+
+  const svg = svgEl('svg', { viewBox:`0 0 ${W} ${H}`, role:'img',
+    'aria-label':'Grafik candle total saldo' });
+
+  [hi - pad, (hi + lo) / 2, lo + pad].forEach(v => {
+    const y = yPos(v);
+    svg.appendChild(svgEl('line', { class:'cd-grid', x1:kiri, x2:W - kanan, y1:y, y2:y }));
+    svg.appendChild(svgEl('text', { x:kiri - 5, y:y + 3, 'text-anchor':'end' }, rpRingkas(v)));
+  });
+  if (lo < 0 && hi > 0) {
+    const y0 = yPos(0);
+    svg.appendChild(svgEl('line', { class:'cd-nol', x1:kiri, x2:W - kanan, y1:y0, y2:y0 }));
+  }
+
+  const lebar = (W - kiri - kanan) / data.length;
+  const badan = Math.min(26, lebar * 0.56);
+  const kolom = [];
+
+  data.forEach((c, i) => {
+    const cx = kiri + lebar * (i + 0.5);
+    const g = svgEl('g');
+    const sel = svgEl('rect', { class:'cd-kol', x:cx - lebar / 2, y:atas - 4,
+      width:lebar, height:tinggi + bawah + 4, tabindex:0, role:'button',
+      'aria-label':`${labelCandle(c, mode, true)}: ${tandaRp(c.net)}` });
+    const buka = () => { kolom.forEach(r => r.classList.remove('cd-sel')); sel.classList.add('cd-sel');
+      dialogCandle(c, mode); };
+    sel.addEventListener('click', buka);
+    sel.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); buka(); } });
+    kolom.push(sel);
+    g.appendChild(sel);
+
+    g.appendChild(svgEl('line', { class:'cd-sumbu', x1:cx, x2:cx, y1:yPos(c.hi), y2:yPos(c.lo),
+      'pointer-events':'none' }));
+    const yo = yPos(c.open), yc = yPos(c.close);
+    const kelas = c.close > c.open ? 'cd-naik' : c.close < c.open ? 'cd-turun' : 'cd-datar';
+    g.appendChild(svgEl('rect', { class:'cd-badan ' + kelas, x:cx - badan / 2,
+      y:Math.min(yo, yc), width:badan, height:Math.max(2.5, Math.abs(yo - yc)), rx:2,
+      'pointer-events':'none' }));
+
+    g.appendChild(svgEl('text', { class:'cd-x', x:cx, y:atas + tinggi + 14, 'text-anchor':'middle',
+      'pointer-events':'none' }, labelCandle(c, mode, false)));
+    /* nilai net hanya muat di tampilan harian */
+    if (mode === 'harian') {
+      g.appendChild(svgEl('text', { class:'cd-net ' + (c.net > 0 ? 'pos' : c.net < 0 ? 'neg' : ''),
+        x:cx, y:atas + tinggi + 28, 'text-anchor':'middle', 'pointer-events':'none' },
+        (c.net > 0 ? '+' : '') + rpRingkas(c.net).replace('Rp ', '')));
+    }
+    svg.appendChild(g);
+  });
+
+  kosong($('#txCandle')).appendChild(svg);
+}
+
+function dialogCandle(c, mode) {
+  const db = Store.db;
+  const sp = Calc.saldoPadaCandle(db, c);
+  const kls = n => n > 0 ? 'pos' : n < 0 ? 'neg' : '';
+
+  const kotak = (judul, nilai, kelas) => el('div', kelas ? { class:kelas } : null, [
+    el('small', null, judul), el('b', { class:kls(nilai) }, rp(nilai))]);
+
+  const body = el('div', { class:'cd-detail' });
+  body.appendChild(el('div', { class:'cd-ring' }, [
+    kotak('Saldo awal 00.00', c.open),
+    kotak(c.terakhir ? 'Saldo sekarang' : 'Saldo akhir', c.close),
+    el('div', { class:'cd-net-box' }, [
+      el('small', null, 'Untung / rugi bersih'),
+      el('b', { class:kls(c.net) }, tandaRp(c.net)),
+      el('small', { style:'text-transform:none;letter-spacing:0;font-weight:600' },
+        `Masuk ${rp(c.masuk)} · Keluar ${rp(c.keluar)}`)
+    ])
+  ]));
+
+  const m = sp.matriks;
+  const akun = db.akun.filter(a => a.aktif || (sp.saldoAkun[a.id] || 0) !== 0);
+  body.appendChild(el('h4', null, 'Saldo tiap rekening'));
+  if (!akun.length) body.appendChild(el('p', { class:'muted' }, 'Belum ada rekening.'));
+  akun.forEach(a => {
+    const v = sp.saldoAkun[a.id] || 0;
+    body.appendChild(el('div', { class:'cd-baris' }, [
+      el('span', { class:'cd-nm' }, a.nama),
+      el('span', { class:'cd-nilai ' + kls(v) }, rp(v))
+    ]));
+    db.kantong.forEach(k => {
+      const sel = (m[a.id] || {})[k.id] || 0;
+      if (!sel) return;
+      body.appendChild(el('div', { class:'cd-baris cd-anak' }, [
+        el('span', { class:'cd-nm' }, '↳ ' + k.nama + ' (' + labelJenis(k) + ')'),
+        el('span', { class:'cd-nilai ' + kls(sel) }, rp(sel))
+      ]));
+    });
+  });
+
+  const kantong = db.kantong.filter(k => !k.arsip || (sp.saldoKantong[k.id] || 0) !== 0);
+  body.appendChild(el('h4', null, 'Saldo tiap sumber dana'));
+  kantong.forEach(k => {
+    const v = sp.saldoKantong[k.id] || 0;
+    body.appendChild(el('div', { class:'cd-baris' }, [
+      el('span', { class:'cd-nm' }, k.nama),
+      el('span', { class:'tag ' + (k.jenis === 'titipan' ? 'titipan' : 'milik') }, labelJenis(k)),
+      el('span', { class:'cd-nilai ' + kls(v) }, rp(v))
+    ]));
+  });
+
+  Modal.buka({
+    judul: labelCandle(c, mode, true),
+    isi: body,
+    aksi: [{ label:'Tutup' }]
   });
 }
 

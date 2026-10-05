@@ -243,6 +243,17 @@
     <select id="txFilterKantong"></select>
   </div>
   <div class="scroll">
+    <div class="tx-grafik" id="txGrafikWrap" hidden>
+      <div class="tx-grafik-head">
+        <h3 class="sec-title" id="txGrafikJudul">Untung / rugi</h3>
+        <div class="seg seg-kecil" id="txGrafikMode" role="tablist">
+          <button type="button" data-mode="harian" class="active">Harian</button>
+          <button type="button" data-mode="bulanan">Bulanan</button>
+        </div>
+      </div>
+      <div class="candle" id="txCandle"></div>
+      <p class="fineprint" id="txGrafikNote"></p>
+    </div>
     <div class="tx-list" id="txList"></div>
     <div class="pad-bottom"></div>
   </div>
