@@ -2088,7 +2088,7 @@ function pasangTransaksi() {
     renderTransaksi(true);
   };
   $('#txDari').onchange = $('#txSampai').onchange = () => renderTransaksi(true);
-  window.addEventListener('resize', () => { if (!$('#scr-transaksi').hidden) renderGrafikTx(); });
+  window.addEventListener('resize', () => { if (!$('#scr-transaksi').hidden) { renderGrafikTx(); renderTransaksi(true); } });
   $$('#txGrafikMode button').forEach(b => b.onclick = () => {
     txGrafikMode = b.dataset.mode;
     renderGrafikTx();
@@ -2130,12 +2130,10 @@ function renderTransaksi(lewatiGrafik) {
   if (fk.value) daftar = daftar.filter(t =>
     t.kantong_id === fk.value || t.kantong_tujuan_id === fk.value);
 
-  /* Periode riwayat. Mencari selalu menelusuri SEMUA riwayat — kalau
-     dibatasi "hari ini", mencari transaksi lama akan terasa seperti
-     datanya hilang. */
+  /* Periode riwayat; pencarian dan filter sumber dana bekerja di dalamnya */
   const periode = rentangPeriodeTx();
   $('#txRentang').hidden = $('#txPeriode').value !== 'pilih';
-  if (periode && !cari) {
+  if (periode) {
     const d = periode.dari.getTime(), s = periode.sampai.getTime();
     daftar = daftar.filter(t => { const w = new Date(t.timestamp).getTime(); return w >= d && w < s; });
   }
@@ -2153,8 +2151,7 @@ function renderTransaksi(lewatiGrafik) {
   }
 
   $('#txInfo').textContent = !db.transaksi.length ? '' :
-    (cari ? 'Hasil pencarian di semua riwayat' : periode ? periode.label : 'Semua riwayat') +
-    ' · ' + daftar.length + ' transaksi';
+    (periode ? periode.label : 'Semua riwayat') + ' · ' + daftar.length + ' transaksi';
 
   const w = kosong($('#txList'));
   w.style.maxHeight = '';
@@ -2162,7 +2159,9 @@ function renderTransaksi(lewatiGrafik) {
     if (!db.transaksi.length) {
       w.appendChild(kartuKosong('Belum ada transaksi', 'Tekan tombol + di bawah untuk mencatat yang pertama.'));
     } else if (cari || fk.value) {
-      w.appendChild(el('p', { class:'empty' }, 'Tidak ada yang cocok dengan pencarianmu.'));
+      w.appendChild(el('p', { class:'empty' }, periode
+        ? 'Tidak ada yang cocok di periode ini. Coba periode lain.'
+        : 'Tidak ada yang cocok dengan pencarianmu.'));
     } else {
       w.appendChild(el('p', { class:'empty' }, 'Belum ada transaksi di periode ini. Pilih periode lain di atas untuk melihat riwayat.'));
     }
@@ -2179,16 +2178,24 @@ function renderTransaksi(lewatiGrafik) {
     w.appendChild(barisTx(t));
   });
 
-  /* jendela setinggi 10 baris pertama; selebihnya digulir di dalamnya */
+  /* Jendela daftar: sebanyak mungkin baris (maksimal 10) yang muat utuh di
+     satu layar — layar dikurangi bilah bawah dan sedikit ruang napas — tapi
+     tidak kurang dari 4. Selebihnya digulir di dalam jendela. */
   const baris = w.querySelectorAll('.tx');
-  if (baris.length > TX_JENDELA) {
-    const tinggi = baris[TX_JENDELA].getBoundingClientRect().top - w.getBoundingClientRect().top;
-    if (tinggi > 0) w.style.maxHeight = (tinggi - 3) + 'px';
+  const kotakGulir = $('#scr-transaksi .scroll');
+  const tersedia = kotakGulir.clientHeight - 70 - 24;
+  const awal = w.getBoundingClientRect().top;
+  if (baris.length > TX_MIN && kotakGulir.clientHeight > 0) {
+    const sesudah = n => baris[n].getBoundingClientRect().top - awal - 3;   // tinggi persis n baris
+    let n = Math.min(TX_JENDELA, baris.length - 1);
+    while (n > TX_MIN && sesudah(n) > tersedia) n--;
+    if (baris.length > n) w.style.maxHeight = sesudah(n) + 'px';
   }
   w.scrollTop = 0;
 }
 
-const TX_JENDELA = 10;   // baris transaksi yang terlihat sekaligus
+const TX_JENDELA = 10;   // paling banyak baris yang terlihat sekaligus
+const TX_MIN = 4;        // paling sedikit (di layar sangat pendek)
 
 /* batas waktu periode riwayat yang dipilih; null = semua riwayat */
 function rentangPeriodeTx() {

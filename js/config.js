@@ -12,11 +12,15 @@
    daftar Authorized JavaScript origins di bawah.
    ══════════════════════════════════════════════ */
 
-const VERSI_APP  = '1.3.0';
+const VERSI_APP  = '1.3.1';
 const TAHAP_APP  = 'beta';
 /* Catatan perubahan — terbaru di atas. Ditampilkan saat versi di footer
    ditekan. Tiap rilis baru: tambah satu entri di paling atas. */
 const CHANGELOG = [
+  { versi:'1.3.1', tanggal:'5 Okt 2026', butir:[
+    'Kotak cari dan filter sumber dana kini bekerja di dalam periode yang dipilih (bukan lagi semua riwayat).',
+    'Jendela daftar transaksi menyesuaikan tinggi layar: menampilkan sebanyak mungkin baris (4–10) yang muat utuh dalam satu layar.'
+  ]},
   { versi:'1.3.0', tanggal:'5 Okt 2026', butir:[
     'Tab Transaksi kini hanya menampilkan transaksi hari ini, jadi halamannya tidak lagi panjang.',
     'Baru: pilih periode riwayat — kemarin, 7 hari terakhir, bulan ini, bulan lalu, semua riwayat, atau rentang tanggal sendiri.',
