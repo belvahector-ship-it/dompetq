@@ -397,80 +397,66 @@ const Calc = {
     return { masuk, keluar, selisih: masuk - keluar };
   },
 
-  /* Candlestick total saldo, dihitung per hari (7 terakhir) atau per bulan
-     (12 terakhir) dengan batas jam 00.00 waktu perangkat.
+  /* Candlestick total saldo untuk SATU SIKLUS penuh, batas periode jam 00.00
+     waktu perangkat:
+       harian  → semua hari di bulan berjalan (28–31 candle)
+       bulanan → Januari–Desember tahun berjalan (12 candle)
+     Periode yang belum tiba ditandai `depan` dan tidak punya angka.
        open  = total saldo di awal periode (00.00)
        close = total saldo di akhir periode (periode berjalan: saldo sekarang)
        net   = close − open  → untung/rugi bersih periode itu
-     Total saldo hanya berubah oleh uang masuk / keluar / saldo awal;
-     transfer cuma memindah, jadi tidak menggerakkan candle. */
+     Open/close diambil dari matriks rekening × sumber dana pada batas
+     periode, jadi sama persis dengan saldo di beranda. */
   candle(db, mode, sekarang) {
     const kini = sekarang || new Date();
     const harian = mode !== 'bulanan';
-    const jumlah = harian ? 7 : 12;
-    const y = kini.getFullYear(), m = kini.getMonth(), d = kini.getDate();
+    const y = kini.getFullYear(), m = kini.getMonth();
+    const jumlah = harian ? new Date(y, m + 1, 0).getDate() : 12;
+    const t0 = kini.getTime();
 
     /* Pasangan "transaksi dikoreksi + entri pembaliknya" saling meniadakan,
-       jadi dibuang sebelum dihitung: saldo tetap sama, tapi angka masuk/keluar
-       tidak membengkak oleh koreksi. Pinjaman & pembayaran piutang tetap
-       menggerakkan saldo, hanya dipisah dari pemasukan/pengeluaran. */
+       jadi dibuang dari sumbu (high/low): saldo tetap sama. */
     const skip = this.idDikoreksi(db);
-    const pp = this.idPihakPiutang(db);
     const urut = [];
     for (const t of db.transaksi) {
       const w = new Date(t.timestamp).getTime();
       if (!isFinite(w) || skip.has(t.id)) continue;
-      const n = Number(t.nominal) || 0;
-      /* sama seperti matriks(): tanpa rekening / sumber dana tidak terhitung */
       if (!t.akun_id || !t.kantong_id) continue;
-      const utang = !!(t.pihak_id && pp.has(t.pihak_id));
-      if (t.jenis === 'saldo_awal') urut.push({ w, d: n, tipe: 'awal' });
-      else if (t.jenis === 'masuk') urut.push({ w, d: n, tipe: utang ? 'piutang' : 'masuk' });
-      else if (t.jenis === 'keluar') urut.push({ w, d: -n, tipe: utang ? 'piutang' : 'keluar' });
+      const n = Number(t.nominal) || 0;
+      if (t.jenis === 'saldo_awal' || t.jenis === 'masuk') urut.push({ w, d: n });
+      else if (t.jenis === 'keluar') urut.push({ w, d: -n });
     }
     urut.sort((a, b) => a.w - b.w);
 
+    const total = mx => db.kantong.reduce((s, k) => s +
+      Object.keys(mx).reduce((a, ak) => a + ((mx[ak] || {})[k.id] || 0), 0), 0);
+
     const hasil = [];
-    let i = 0, saldo = 0;
-    for (let k = jumlah - 1; k >= 0; k--) {
-      const awal  = harian ? new Date(y, m, d - k)     : new Date(y, m - k, 1);
-      const akhir = harian ? new Date(y, m, d - k + 1) : new Date(y, m - k + 1, 1);
-      const terakhir = k === 0;
+    let i = 0, saldo = 0, mAwal = null;
+    for (let k = 0; k < jumlah; k++) {
+      const awal  = harian ? new Date(y, m, k + 1) : new Date(y, k, 1);
+      const akhir = harian ? new Date(y, m, k + 2) : new Date(y, k + 1, 1);
+      const depan = awal.getTime() > t0;
+      const terakhir = !depan && akhir.getTime() > t0;
+      if (depan) { hasil.push({ awal, akhir, depan: true, terakhir: false }); continue; }
 
       while (i < urut.length && urut[i].w < awal.getTime()) saldo += urut[i++].d;
-      const open = saldo;
-      let hi = open, lo = open, masuk = 0, keluar = 0, awalan = 0, piutang = 0;
+      let hi = saldo, lo = saldo;
       /* periode berjalan menampung semua transaksi, termasuk yang
          bertanggal ke depan, supaya cocok dengan saldo di beranda */
       while (i < urut.length && (terakhir || urut[i].w < akhir.getTime())) {
-        const x = urut[i++];
-        saldo += x.d;
-        if (x.tipe === 'masuk') masuk += x.d;
-        else if (x.tipe === 'keluar') keluar -= x.d;
-        else if (x.tipe === 'awal') awalan += x.d;
-        else piutang += x.d;
+        saldo += urut[i++].d;
         if (saldo > hi) hi = saldo;
         if (saldo < lo) lo = saldo;
       }
-      const sampai = terakhir ? null : new Date(akhir.getTime() - 1);
-      hasil.push({ awal, akhir, terakhir, open, close: saldo, hi, lo,
-                  masuk, keluar, awalan, piutang, net: saldo - open,
-                  sebelum: new Date(awal.getTime() - 1), sampai });
-    }
 
-    /* Cross-check: open & close diambil dari saldo semua rekening/sumber
-       dana (matriks) pada batas periode, lalu net = close − open. Itu angka
-       yang sama dengan beranda, jadi tidak bisa menyimpang dari saldo asli. */
-    const total = m => db.kantong.reduce((s, k) => s +
-      Object.keys(m).reduce((a, ak) => a + ((m[ak] || {})[k.id] || 0), 0), 0);
-    let mAwal = this.matriks(db, hasil[0].sebelum);
-    for (const c of hasil) {
-      const mAkhir = this.matriks(db, c.sampai);
-      c.mAwal = mAwal; c.mAkhir = mAkhir;
-      c.open = total(mAwal); c.close = total(mAkhir);
-      c.net = c.close - c.open;
-      c.hi = Math.max(c.hi, c.open, c.close);
-      c.lo = Math.min(c.lo, c.open, c.close);
+      const sampai = terakhir ? null : new Date(akhir.getTime() - 1);
+      if (!mAwal) mAwal = this.matriks(db, new Date(awal.getTime() - 1));
+      const mAkhir = this.matriks(db, sampai);
+      const open = total(mAwal), close = total(mAkhir);
+      hasil.push({ awal, akhir, depan: false, terakhir, sampai, mAwal, mAkhir,
+                   open, close, net: close - open,
+                   hi: Math.max(hi, open, close), lo: Math.min(lo, open, close) });
       mAwal = mAkhir;
     }
     return hasil;

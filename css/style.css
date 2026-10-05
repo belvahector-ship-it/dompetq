@@ -772,7 +772,7 @@ input,select{font:inherit;color:inherit}
 .seg.seg-kecil button{flex:none;padding:5px 10px;font-size:12px}
 .seg.seg-kecil button.active{padding:3px 8px;background:var(--amber)}
 .candle{margin-top:8px}
-.candle svg{display:block;width:100%;height:auto;overflow:visible}
+.candle svg{display:block;overflow:visible}
 .candle .cd-grid{stroke:var(--sunk);stroke-width:1}
 .candle .cd-nol{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3}
 .candle .cd-sumbu{stroke:var(--ink);stroke-width:1.6}
@@ -812,3 +812,12 @@ input,select{font:inherit;color:inherit}
 .cd-baris .cd-nilai small{display:block;font-size:10.5px;font-weight:700;color:var(--ink-3)}
 .cd-baris .cd-nilai small.pos{color:var(--green-ink)}
 .cd-baris .cd-nilai small.neg{color:var(--red-ink)}
+
+/* grafik geser: sumbu Y tetap, candle bisa digeser */
+.candle-baris{display:flex;align-items:flex-start}
+.candle-sumbu{flex:none;display:block}
+.candle-geser{flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;
+  overscroll-behavior-x:contain;scrollbar-width:thin}
+.candle-geser svg{width:auto;max-width:none}
+.candle text.cd-kini{fill:var(--ink);font-weight:800}
+.candle text.cd-depan{opacity:.4}

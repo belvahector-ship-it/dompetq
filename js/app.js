@@ -2060,17 +2060,19 @@ function dialogTambahAkun(cb) {
    TRANSAKSI
    ══════════════════════════════════════════════ */
 function pasangTransaksi() {
-  $('#txCari').oninput = renderTransaksi;
-  $('#txFilterKantong').onchange = renderTransaksi;
+  /* mencari / menyaring tidak mengubah grafik — jangan digambar ulang */
+  $('#txCari').oninput = () => renderTransaksi(true);
+  $('#txFilterKantong').onchange = () => renderTransaksi(true);
+  window.addEventListener('resize', () => { if (!$('#scr-transaksi').hidden) renderGrafikTx(); });
   $$('#txGrafikMode button').forEach(b => b.onclick = () => {
     txGrafikMode = b.dataset.mode;
     renderGrafikTx();
   });
 }
 
-function renderTransaksi() {
+function renderTransaksi(lewatiGrafik) {
   const db = Store.db;
-  renderGrafikTx();
+  if (lewatiGrafik !== true) renderGrafikTx();
   const cari = $('#txCari').value.toLowerCase().trim();
   const fk = $('#txFilterKantong');
 
@@ -2131,6 +2133,8 @@ function renderTransaksi() {
    Satu candle = satu periode (00.00 → 00.00). Ketuk candle untuk melihat
    saldo tiap rekening dan sumber dananya di akhir periode itu. */
 let txGrafikMode = 'harian';
+let txGrafikGeser = { mode:'', kiri:0 };   // posisi geser terakhir per mode
+const CANDLE_TAMPAK = 7;                  // candle yang terlihat sekaligus
 
 function svgEl(tag, attr, teks) {
   const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -2157,44 +2161,56 @@ function renderGrafikTx() {
   if (wrap.hidden) return;
 
   const mode = txGrafikMode;
+  const kini = new Date();
   $$('#txGrafikMode button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-  $('#txGrafikNote').textContent = mode === 'bulanan'
-    ? 'Total saldo 12 bulan terakhir. Tiap candle = awal bulan (00.00) sampai akhir bulan. Ketuk candle untuk rincian.'
-    : 'Total saldo 7 hari terakhir. Tiap candle = 00.00 sampai 00.00 berikutnya. Ketuk candle untuk rincian.';
+  $('#txGrafikNote').textContent = (mode === 'bulanan'
+    ? 'Total saldo Januari–Desember ' + kini.getFullYear() + '. Tiap candle = awal bulan (00.00) sampai akhir bulan.'
+    : 'Total saldo ' + BULAN[kini.getMonth()] + ' ' + kini.getFullYear() + ', tiap candle = 00.00 sampai 00.00 berikutnya.')
+    + ' Geser ke kiri/kanan untuk melihat periode lain; ketuk candle untuk rincian.';
 
-  const data = Calc.candle(db, mode);
-  const W = 340, H = mode === 'harian' ? 214 : 200;
-  const kiri = 54, kanan = 6, atas = 10;
-  const bawah = mode === 'harian' ? 44 : 28;
+  const data = Calc.candle(db, mode, kini);
+  const ada = data.filter(c => !c.depan);
+
+  /* ukuran dalam piksel: lebar kolom = lebar layar / 7, jadi selalu 7
+     candle terlihat, berapa pun jumlah periodenya */
+  const kotak = $('#txCandle');
+  kosong(kotak);
+  const LEBAR_SUMBU = 50, H = 214, atas = 10, bawah = 44;
   const tinggi = H - atas - bawah;
+  const lebarTampak = Math.max(210, (kotak.clientWidth || 300) - LEBAR_SUMBU);
+  const lebar = lebarTampak / CANDLE_TAMPAK;
+  const W = lebar * data.length;
+  const badan = Math.min(26, lebar * 0.56);
 
-  let lo = Math.min(...data.map(c => c.lo)), hi = Math.max(...data.map(c => c.hi));
+  /* skala vertikal dari seluruh siklus, supaya tidak melompat saat digeser */
+  let lo = Math.min(...ada.map(c => c.lo)), hi = Math.max(...ada.map(c => c.hi));
   if (hi === lo) { hi += 1; lo -= 1; }
   const pad = (hi - lo) * 0.08;
   hi += pad; lo -= pad;
   const yPos = v => atas + (hi - v) / (hi - lo) * tinggi;
+  const tick = [hi - pad, (hi + lo) / 2, lo + pad];
 
-  const svg = svgEl('svg', { viewBox:`0 0 ${W} ${H}`, role:'img',
-    'aria-label':'Grafik candle total saldo' });
+  /* sumbu Y tetap di kiri */
+  const sumbu = svgEl('svg', { class:'candle-sumbu', width:LEBAR_SUMBU, height:H, 'aria-hidden':'true' });
+  tick.forEach(v => sumbu.appendChild(svgEl('text',
+    { x:LEBAR_SUMBU - 5, y:yPos(v) + 3, 'text-anchor':'end' }, rpRingkas(v))));
 
-  [hi - pad, (hi + lo) / 2, lo + pad].forEach(v => {
-    const y = yPos(v);
-    svg.appendChild(svgEl('line', { class:'cd-grid', x1:kiri, x2:W - kanan, y1:y, y2:y }));
-    svg.appendChild(svgEl('text', { x:kiri - 5, y:y + 3, 'text-anchor':'end' }, rpRingkas(v)));
-  });
+  const svg = svgEl('svg', { width:W, height:H, role:'img', 'aria-label':'Grafik candle total saldo' });
+  tick.forEach(v => svg.appendChild(svgEl('line', { class:'cd-grid', x1:0, x2:W, y1:yPos(v), y2:yPos(v) })));
   if (lo < 0 && hi > 0) {
-    const y0 = yPos(0);
-    svg.appendChild(svgEl('line', { class:'cd-nol', x1:kiri, x2:W - kanan, y1:y0, y2:y0 }));
+    svg.appendChild(svgEl('line', { class:'cd-nol', x1:0, x2:W, y1:yPos(0), y2:yPos(0) }));
   }
 
-  const lebar = (W - kiri - kanan) / data.length;
-  const badan = Math.min(26, lebar * 0.56);
   const kolom = [];
-
   data.forEach((c, i) => {
-    const cx = kiri + lebar * (i + 0.5);
+    const cx = lebar * (i + 0.5);
     const g = svgEl('g');
-    const sel = svgEl('rect', { class:'cd-kol', x:cx - lebar / 2, y:atas - 4,
+    const labelX = svgEl('text', { class:'cd-x' + (c.terakhir ? ' cd-kini' : '') + (c.depan ? ' cd-depan' : ''),
+      x:cx, y:atas + tinggi + 14, 'text-anchor':'middle', 'pointer-events':'none' }, labelCandle(c, mode, false));
+
+    if (c.depan) { g.appendChild(labelX); svg.appendChild(g); return; }
+
+    const sel = svgEl('rect', { class:'cd-kol', x:i * lebar, y:atas - 4,
       width:lebar, height:tinggi + bawah + 4, tabindex:0, role:'button',
       'aria-label':`${labelCandle(c, mode, true)}: ${tandaRp(c.net)}` });
     const buka = () => { kolom.forEach(r => r.classList.remove('cd-sel')); sel.classList.add('cd-sel');
@@ -2212,18 +2228,23 @@ function renderGrafikTx() {
       y:Math.min(yo, yc), width:badan, height:Math.max(2.5, Math.abs(yo - yc)), rx:2,
       'pointer-events':'none' }));
 
-    g.appendChild(svgEl('text', { class:'cd-x', x:cx, y:atas + tinggi + 14, 'text-anchor':'middle',
-      'pointer-events':'none' }, labelCandle(c, mode, false)));
-    /* nilai net hanya muat di tampilan harian */
-    if (mode === 'harian') {
-      g.appendChild(svgEl('text', { class:'cd-net ' + (c.net > 0 ? 'pos' : c.net < 0 ? 'neg' : ''),
-        x:cx, y:atas + tinggi + 28, 'text-anchor':'middle', 'pointer-events':'none' },
-        (c.net > 0 ? '+' : '') + rpRingkas(c.net).replace('Rp ', '')));
-    }
+    g.appendChild(labelX);
+    g.appendChild(svgEl('text', { class:'cd-net ' + (c.net > 0 ? 'pos' : c.net < 0 ? 'neg' : ''),
+      x:cx, y:atas + tinggi + 28, 'text-anchor':'middle', 'pointer-events':'none' },
+      (c.net > 0 ? '+' : '') + rpRingkas(c.net).replace('Rp ', '')));
     svg.appendChild(g);
   });
 
-  kosong($('#txCandle')).appendChild(svg);
+  const geser = el('div', { class:'candle-geser' }, svg);
+  kotak.appendChild(el('div', { class:'candle-baris' }, [sumbu, geser]));
+
+  /* posisi awal: periode berjalan di ujung kanan jendela; posisi geser
+     dipertahankan selama tetap di mode yang sama */
+  const iKini = data.findIndex(c => c.terakhir);
+  const otomatis = Math.max(0, (iKini + 1) * lebar - lebarTampak);
+  geser.scrollLeft = txGrafikGeser.mode === mode ? txGrafikGeser.kiri : otomatis;
+  txGrafikGeser = { mode, kiri:geser.scrollLeft };
+  geser.addEventListener('scroll', () => { txGrafikGeser = { mode, kiri:geser.scrollLeft }; }, { passive:true });
 }
 
 function dialogCandle(c, mode) {
