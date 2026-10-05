@@ -12,8 +12,31 @@
    daftar Authorized JavaScript origins di bawah.
    ══════════════════════════════════════════════ */
 
-const VERSI_APP  = '1.1.1';
+const VERSI_APP  = '1.2.0';
 const TAHAP_APP  = 'beta';
+/* Catatan perubahan — terbaru di atas. Ditampilkan saat versi di footer
+   ditekan. Tiap rilis baru: tambah satu entri di paling atas. */
+const CHANGELOG = [
+  { versi:'1.2.0', tanggal:'5 Okt 2026', butir:[
+    'Baru: ketuk nomor versi di bagian bawah layar untuk melihat catatan perubahan ini.'
+  ]},
+  { versi:'1.1.1', tanggal:'5 Okt 2026', butir:[
+    'Perbaikan: garis panjang (sumbu) pada candle dihapus karena menampilkan lonjakan saldo yang tidak pernah terjadi.',
+    'Perbaikan: daftar transaksi tidak lagi ikut hilang kalau grafik gagal digambar.',
+    'Berkas aplikasi kini dimuat dengan nomor versi, jadi pembaruan langsung terpakai tanpa perlu hapus cache.'
+  ]},
+  { versi:'1.1.0', tanggal:'5 Okt 2026', butir:[
+    'Baru: grafik candle untung/rugi di tab Transaksi, per hari (satu bulan penuh) atau per bulan (satu tahun penuh).',
+    'Tiap candle menunjukkan saldo total dari 00.00 sampai 00.00; geser untuk melihat 7 periode lain sekaligus.',
+    'Ketuk candle untuk melihat saldo awal, akhir, dan selisih tiap rekening dan sumber dana.',
+    'Pilih bulan atau tahun dengan tombol panah; skala mengikuti candle yang terlihat.'
+  ]},
+  { versi:'1.0.0', tanggal:'Agu 2026', butir:[
+    'Rilis awal: catat pemasukan, pengeluaran, dan pindah dana antar rekening dan sumber dana (pribadi/titipan).',
+    'Sinkron ke Google Sheets, pengingat, piutang, dan dana talangan.'
+  ]}
+];
+
 const KREDIT_APP = 'ibstudio.my.id';
 const KREDIT_URL = 'https://ibstudio.my.id';
 

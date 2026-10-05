@@ -180,7 +180,8 @@ function segarkan() {
 function pasangFooter() {
   const isi = () => el('footer', { class:'kredit' }, [
     el('span', null, 'DompetQ'),
-    el('span', { class:'kredit-versi' }, TAHAP_APP + ' v' + VERSI_APP),
+    el('button', { type:'button', class:'kredit-versi', 'aria-label':'Lihat catatan perubahan',
+      onclick: bukaChangelog }, TAHAP_APP + ' v' + VERSI_APP),
     el('span', { class:'kredit-pisah' }, '·'),
     el('a', { href: KREDIT_URL, target:'_blank', rel:'noopener' }, KREDIT_APP)
   ]);
@@ -188,6 +189,23 @@ function pasangFooter() {
   $$('.pad-bottom').forEach(p => p.parentElement.insertBefore(isi(), p));
   const ob = $('.ob-step[data-step="0"]');
   if (ob) ob.appendChild(isi());
+}
+
+/* Jendela catatan perubahan — dibuka dari versi di footer. */
+function bukaChangelog() {
+  const isi = el('div', { class:'cl' }, CHANGELOG.map((r, i) => el('section', { class:'cl-rilis' }, [
+    el('div', { class:'cl-kepala' }, [
+      el('b', null, 'v' + r.versi),
+      i === 0 ? el('span', { class:'tag milik' }, 'Terbaru') : null,
+      el('small', null, r.tanggal)
+    ]),
+    el('ul', null, r.butir.map(b => el('li', null, b)))
+  ])));
+  Modal.buka({
+    judul: 'Catatan perubahan',
+    isi,
+    aksi: [{ label:'Tutup' }]
+  });
 }
 
 /* Saran isian selalu berupa BAYANGAN (placeholder), tidak pernah teks
