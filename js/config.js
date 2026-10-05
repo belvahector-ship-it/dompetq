@@ -12,11 +12,17 @@
    daftar Authorized JavaScript origins di bawah.
    ══════════════════════════════════════════════ */
 
-const VERSI_APP  = '1.2.0';
+const VERSI_APP  = '1.3.0';
 const TAHAP_APP  = 'beta';
 /* Catatan perubahan — terbaru di atas. Ditampilkan saat versi di footer
    ditekan. Tiap rilis baru: tambah satu entri di paling atas. */
 const CHANGELOG = [
+  { versi:'1.3.0', tanggal:'5 Okt 2026', butir:[
+    'Tab Transaksi kini hanya menampilkan transaksi hari ini, jadi halamannya tidak lagi panjang.',
+    'Baru: pilih periode riwayat — kemarin, 7 hari terakhir, bulan ini, bulan lalu, semua riwayat, atau rentang tanggal sendiri.',
+    'Daftar menampilkan 10 baris pertama; kalau lebih, gulir ke bawah di dalam daftarnya.',
+    'Kotak cari tetap menelusuri seluruh riwayat, apa pun periode yang dipilih.'
+  ]},
   { versi:'1.2.0', tanggal:'5 Okt 2026', butir:[
     'Baru: ketuk nomor versi di bagian bawah layar untuk melihat catatan perubahan ini.'
   ]},

@@ -2081,6 +2081,13 @@ function pasangTransaksi() {
   /* mencari / menyaring tidak mengubah grafik — jangan digambar ulang */
   $('#txCari').oninput = () => renderTransaksi(true);
   $('#txFilterKantong').onchange = () => renderTransaksi(true);
+  $('#txPeriode').onchange = () => {
+    if ($('#txPeriode').value === 'pilih' && !$('#txDari').value) {
+      $('#txDari').value = $('#txSampai').value = tglInput(new Date());
+    }
+    renderTransaksi(true);
+  };
+  $('#txDari').onchange = $('#txSampai').onchange = () => renderTransaksi(true);
   window.addEventListener('resize', () => { if (!$('#scr-transaksi').hidden) renderGrafikTx(); });
   $$('#txGrafikMode button').forEach(b => b.onclick = () => {
     txGrafikMode = b.dataset.mode;
@@ -2123,6 +2130,16 @@ function renderTransaksi(lewatiGrafik) {
   if (fk.value) daftar = daftar.filter(t =>
     t.kantong_id === fk.value || t.kantong_tujuan_id === fk.value);
 
+  /* Periode riwayat. Mencari selalu menelusuri SEMUA riwayat — kalau
+     dibatasi "hari ini", mencari transaksi lama akan terasa seperti
+     datanya hilang. */
+  const periode = rentangPeriodeTx();
+  $('#txRentang').hidden = $('#txPeriode').value !== 'pilih';
+  if (periode && !cari) {
+    const d = periode.dari.getTime(), s = periode.sampai.getTime();
+    daftar = daftar.filter(t => { const w = new Date(t.timestamp).getTime(); return w >= d && w < s; });
+  }
+
   if (cari) {
     /* "100.000", "100000", dan "Rp 100.000" harus sama-sama ketemu —
        yang diketik orang adalah angka yang dilihatnya di layar. */
@@ -2135,11 +2152,20 @@ function renderTransaksi(lewatiGrafik) {
     });
   }
 
+  $('#txInfo').textContent = !db.transaksi.length ? '' :
+    (cari ? 'Hasil pencarian di semua riwayat' : periode ? periode.label : 'Semua riwayat') +
+    ' · ' + daftar.length + ' transaksi';
+
   const w = kosong($('#txList'));
+  w.style.maxHeight = '';
   if (!daftar.length) {
-    w.appendChild(cari || fk.value
-      ? el('p', { class:'empty' }, 'Tidak ada yang cocok dengan pencarianmu.')
-      : kartuKosong('Belum ada transaksi', 'Tekan tombol + di bawah untuk mencatat yang pertama.'));
+    if (!db.transaksi.length) {
+      w.appendChild(kartuKosong('Belum ada transaksi', 'Tekan tombol + di bawah untuk mencatat yang pertama.'));
+    } else if (cari || fk.value) {
+      w.appendChild(el('p', { class:'empty' }, 'Tidak ada yang cocok dengan pencarianmu.'));
+    } else {
+      w.appendChild(el('p', { class:'empty' }, 'Belum ada transaksi di periode ini. Pilih periode lain di atas untuk melihat riwayat.'));
+    }
     return;
   }
 
@@ -2152,6 +2178,40 @@ function renderTransaksi(lewatiGrafik) {
     }
     w.appendChild(barisTx(t));
   });
+
+  /* jendela setinggi 10 baris pertama; selebihnya digulir di dalamnya */
+  const baris = w.querySelectorAll('.tx');
+  if (baris.length > TX_JENDELA) {
+    const tinggi = baris[TX_JENDELA].getBoundingClientRect().top - w.getBoundingClientRect().top;
+    if (tinggi > 0) w.style.maxHeight = (tinggi - 3) + 'px';
+  }
+  w.scrollTop = 0;
+}
+
+const TX_JENDELA = 10;   // baris transaksi yang terlihat sekaligus
+
+/* batas waktu periode riwayat yang dipilih; null = semua riwayat */
+function rentangPeriodeTx() {
+  const v = $('#txPeriode').value;
+  const n = new Date(), y = n.getFullYear(), m = n.getMonth(), d = n.getDate();
+  switch (v) {
+    case 'hari':      return { dari:new Date(y, m, d),     sampai:new Date(y, m, d + 1), label:'Hari ini' };
+    case 'kemarin':   return { dari:new Date(y, m, d - 1), sampai:new Date(y, m, d),     label:'Kemarin' };
+    case '7hari':     return { dari:new Date(y, m, d - 6), sampai:new Date(y, m, d + 1), label:'7 hari terakhir' };
+    case 'bulan':     return { dari:new Date(y, m, 1),     sampai:new Date(y, m + 1, 1), label:BULAN[m] + ' ' + y };
+    case 'bulanlalu': { const l = new Date(y, m - 1, 1);
+      return { dari:l, sampai:new Date(y, m, 1), label:BULAN[l.getMonth()] + ' ' + l.getFullYear() }; }
+    case 'pilih': {
+      let a = $('#txDari').value, b = $('#txSampai').value;
+      if (!a || !b) return null;
+      if (a > b) [a, b] = [b, a];
+      const dari = new Date(a + 'T00:00:00'), akhir = new Date(b + 'T00:00:00');
+      if (!isFinite(dari) || !isFinite(akhir)) return null;
+      return { dari, sampai:new Date(akhir.getFullYear(), akhir.getMonth(), akhir.getDate() + 1),
+               label:tglSingkat(dari) + ' – ' + tglSingkat(akhir) };
+    }
+    default:          return null;
+  }
 }
 
 /* ── grafik candle: untung/rugi bersih per hari / bulan ──
