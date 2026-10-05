@@ -12,7 +12,7 @@
    daftar Authorized JavaScript origins di bawah.
    ══════════════════════════════════════════════ */
 
-const VERSI_APP  = '1.0.0';
+const VERSI_APP  = '1.1.0';
 const TAHAP_APP  = 'beta';
 const KREDIT_APP = 'ibstudio.my.id';
 const KREDIT_URL = 'https://ibstudio.my.id';

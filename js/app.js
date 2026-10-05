@@ -2074,7 +2074,12 @@ function pasangTransaksi() {
 
 function renderTransaksi(lewatiGrafik) {
   const db = Store.db;
-  if (lewatiGrafik !== true) renderGrafikTx();
+  /* grafik hanyalah tambahan: kalau gagal digambar, daftar transaksi
+     di bawahnya tetap harus tampil */
+  if (lewatiGrafik !== true) {
+    try { renderGrafikTx(); }
+    catch (e) { console.error('Grafik gagal digambar:', e); $('#txGrafikWrap').hidden = true; }
+  }
   const cari = $('#txCari').value.toLowerCase().trim();
   const fk = $('#txFilterKantong');
 
