@@ -401,16 +401,19 @@ const Calc = {
      waktu perangkat:
        harian  → semua hari di bulan berjalan (28–31 candle)
        bulanan → Januari–Desember tahun berjalan (12 candle)
+     (atau bulan / tahun lain lewat `acuan`)
      Periode yang belum tiba ditandai `depan` dan tidak punya angka.
        open  = total saldo di awal periode (00.00)
        close = total saldo di akhir periode (periode berjalan: saldo sekarang)
        net   = close − open  → untung/rugi bersih periode itu
      Open/close diambil dari matriks rekening × sumber dana pada batas
      periode, jadi sama persis dengan saldo di beranda. */
-  candle(db, mode, sekarang) {
+  candle(db, mode, sekarang, acuan) {
     const kini = sekarang || new Date();
     const harian = mode !== 'bulanan';
-    const y = kini.getFullYear(), m = kini.getMonth();
+    /* `acuan` = tanggal mana saja di bulan / tahun yang ingin dilihat */
+    const ac = acuan || kini;
+    const y = ac.getFullYear(), m = ac.getMonth();
     const jumlah = harian ? new Date(y, m + 1, 0).getDate() : 12;
     const t0 = kini.getTime();
 

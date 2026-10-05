@@ -2068,6 +2068,8 @@ function pasangTransaksi() {
     txGrafikMode = b.dataset.mode;
     renderGrafikTx();
   });
+  $('#txGrafikPrev').onclick = () => geserPeriodeGrafik(-1);
+  $('#txGrafikNext').onclick = () => geserPeriodeGrafik(1);
 }
 
 function renderTransaksi(lewatiGrafik) {
@@ -2133,7 +2135,8 @@ function renderTransaksi(lewatiGrafik) {
    Satu candle = satu periode (00.00 → 00.00). Ketuk candle untuk melihat
    saldo tiap rekening dan sumber dananya di akhir periode itu. */
 let txGrafikMode = 'harian';
-let txGrafikGeser = { mode:'', kiri:0 };   // posisi geser terakhir per mode
+let txGrafikGeser = { kunci:'', kiri:0 };  // posisi geser terakhir per mode & periode
+let txGrafikAcuan = null;                  // {y, m} bulan/tahun yang dilihat; null = sekarang
 const CANDLE_TAMPAK = 7;                  // candle yang terlihat sekaligus
 
 function svgEl(tag, attr, teks) {
@@ -2154,6 +2157,31 @@ function labelCandle(c, mode, panjang) {
 
 function tandaRp(n) { return (n > 0 ? '+' : '') + rp(n); }
 
+/* batas periode yang boleh dilihat: dari transaksi tertua sampai sekarang */
+function batasGrafik(mode) {
+  const kini = new Date();
+  let awal = kini;
+  for (const t of Store.db.transaksi) {
+    const w = new Date(t.timestamp);
+    if (isFinite(w) && w < awal) awal = w;
+  }
+  const nilai = (y, m) => mode === 'bulanan' ? y : y * 12 + m;
+  return { min: nilai(awal.getFullYear(), awal.getMonth()),
+           maks: nilai(kini.getFullYear(), kini.getMonth()), nilai };
+}
+
+function geserPeriodeGrafik(arah) {
+  const kini = new Date();
+  const ac = txGrafikAcuan || { y: kini.getFullYear(), m: kini.getMonth() };
+  const bulanan = txGrafikMode === 'bulanan';
+  const b = batasGrafik(txGrafikMode);
+  const baru = bulanan ? new Date(ac.y + arah, ac.m, 1) : new Date(ac.y, ac.m + arah, 1);
+  const n = b.nilai(baru.getFullYear(), baru.getMonth());
+  if (n < b.min || n > b.maks) return;
+  txGrafikAcuan = { y: baru.getFullYear(), m: baru.getMonth() };
+  renderGrafikTx();
+}
+
 function renderGrafikTx() {
   const wrap = $('#txGrafikWrap');
   const db = Store.db;
@@ -2162,13 +2190,22 @@ function renderGrafikTx() {
 
   const mode = txGrafikMode;
   const kini = new Date();
+  const ac = txGrafikAcuan || { y: kini.getFullYear(), m: kini.getMonth() };
   $$('#txGrafikMode button').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+
+  /* tombol pilih periode: bulan (mode harian) atau tahun (mode bulanan) */
+  const bt = batasGrafik(mode);
+  const nilaiIni = bt.nilai(ac.y, ac.m);
+  $('#txGrafikPeriode').textContent = mode === 'bulanan' ? String(ac.y) : BULAN[ac.m] + ' ' + ac.y;
+  $('#txGrafikPrev').disabled = nilaiIni <= bt.min;
+  $('#txGrafikNext').disabled = nilaiIni >= bt.maks;
+
   $('#txGrafikNote').textContent = (mode === 'bulanan'
-    ? 'Total saldo Januari–Desember ' + kini.getFullYear() + '. Tiap candle = awal bulan (00.00) sampai akhir bulan.'
-    : 'Total saldo ' + BULAN[kini.getMonth()] + ' ' + kini.getFullYear() + ', tiap candle = 00.00 sampai 00.00 berikutnya.')
+    ? 'Total saldo Januari–Desember ' + ac.y + '. Tiap candle = awal bulan (00.00) sampai akhir bulan.'
+    : 'Total saldo ' + BULAN[ac.m] + ' ' + ac.y + ', tiap candle = 00.00 sampai 00.00 berikutnya.')
     + ' Geser ke kiri/kanan untuk melihat periode lain; ketuk candle untuk rincian.';
 
-  const data = Calc.candle(db, mode, kini);
+  const data = Calc.candle(db, mode, kini, new Date(ac.y, ac.m, 1));
   const ada = data.filter(c => !c.depan);
 
   /* ukuran dalam piksel: lebar kolom = lebar layar / 7, jadi selalu 7
@@ -2241,10 +2278,11 @@ function renderGrafikTx() {
   /* posisi awal: periode berjalan di ujung kanan jendela; posisi geser
      dipertahankan selama tetap di mode yang sama */
   const iKini = data.findIndex(c => c.terakhir);
-  const otomatis = Math.max(0, (iKini + 1) * lebar - lebarTampak);
-  geser.scrollLeft = txGrafikGeser.mode === mode ? txGrafikGeser.kiri : otomatis;
-  txGrafikGeser = { mode, kiri:geser.scrollLeft };
-  geser.addEventListener('scroll', () => { txGrafikGeser = { mode, kiri:geser.scrollLeft }; }, { passive:true });
+  const otomatis = iKini < 0 ? 0 : Math.max(0, (iKini + 1) * lebar - lebarTampak);
+  const kunci = mode + ':' + ac.y + ':' + (mode === 'bulanan' ? 0 : ac.m);
+  geser.scrollLeft = txGrafikGeser.kunci === kunci ? txGrafikGeser.kiri : otomatis;
+  txGrafikGeser = { kunci, kiri:geser.scrollLeft };
+  geser.addEventListener('scroll', () => { txGrafikGeser = { kunci, kiri:geser.scrollLeft }; }, { passive:true });
 }
 
 function dialogCandle(c, mode) {
