@@ -2182,6 +2182,16 @@ function geserPeriodeGrafik(arah) {
   renderGrafikTx();
 }
 
+/* titik garis bantu di angka bulat (1, 2, 2,5, 5 × 10^n) antara lo dan hi */
+function tickBulat(lo, hi, perkiraan) {
+  const mentah = (hi - lo) / perkiraan;
+  const pangkat = Math.pow(10, Math.floor(Math.log10(mentah)));
+  const langkah = [1, 2, 2.5, 5, 10].map(x => x * pangkat).find(x => x >= mentah);
+  const hasil = [];
+  for (let v = Math.ceil(lo / langkah) * langkah; v <= hi + 1e-9; v += langkah) hasil.push(v);
+  return hasil;
+}
+
 function renderGrafikTx() {
   const wrap = $('#txGrafikWrap');
   const db = Store.db;
@@ -2212,20 +2222,22 @@ function renderGrafikTx() {
      candle terlihat, berapa pun jumlah periodenya */
   const kotak = $('#txCandle');
   kosong(kotak);
-  const LEBAR_SUMBU = 50, H = 214, atas = 10, bawah = 44;
+  const LEBAR_SUMBU = 60, H = 214, atas = 10, bawah = 44;
   const tinggi = H - atas - bawah;
   const lebarTampak = Math.max(210, (kotak.clientWidth || 300) - LEBAR_SUMBU);
   const lebar = lebarTampak / CANDLE_TAMPAK;
   const W = lebar * data.length;
   const badan = Math.min(26, lebar * 0.56);
 
-  /* skala vertikal dari seluruh siklus, supaya tidak melompat saat digeser */
-  let lo = Math.min(...ada.map(c => c.lo)), hi = Math.max(...ada.map(c => c.hi));
-  if (hi === lo) { hi += 1; lo -= 1; }
-  const pad = (hi - lo) * 0.08;
-  hi += pad; lo -= pad;
+  /* Skala vertikal dari seluruh siklus, supaya tidak melompat saat digeser:
+     dasar = Rp 0 (atau nilai terendah kalau ada yang minus, + 5%),
+     puncak = nilai tertinggi + 5%. Garis bantu di angka bulat. */
+  const tertinggi = Math.max(...ada.map(c => c.hi));
+  const terendah = Math.min(...ada.map(c => c.lo));
+  let hi = tertinggi > 0 ? tertinggi * 1.05 : 1;
+  let lo = terendah < 0 ? terendah * 1.05 : 0;
   const yPos = v => atas + (hi - v) / (hi - lo) * tinggi;
-  const tick = [hi - pad, (hi + lo) / 2, lo + pad];
+  const tick = tickBulat(lo, hi, 4);
 
   /* sumbu Y tetap di kiri */
   const sumbu = svgEl('svg', { class:'candle-sumbu', width:LEBAR_SUMBU, height:H, 'aria-hidden':'true' });
