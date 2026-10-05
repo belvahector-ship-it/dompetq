@@ -2224,11 +2224,6 @@ function renderGrafikTx() {
   $('#txGrafikPrev').disabled = nilaiIni <= bt.min;
   $('#txGrafikNext').disabled = nilaiIni >= bt.maks;
 
-  $('#txGrafikNote').textContent = (mode === 'bulanan'
-    ? 'Total saldo Januari–Desember ' + ac.y + '. Tiap candle = awal bulan (00.00) sampai akhir bulan.'
-    : 'Total saldo ' + BULAN[ac.m] + ' ' + ac.y + ', tiap candle = 00.00 sampai 00.00 berikutnya.')
-    + ' Geser ke kiri/kanan untuk melihat periode lain; ketuk candle untuk rincian.';
-
   const data = Calc.candle(db, mode, kini, new Date(ac.y, ac.m, 1));
   const ada = data.filter(c => !c.depan);
 
