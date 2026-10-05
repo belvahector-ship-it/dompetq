@@ -807,3 +807,8 @@ input,select{font:inherit;color:inherit}
 .cd-baris.cd-anak{padding-left:14px;font-size:12.5px;border-bottom:0;color:var(--ink-2)}
 .cd-baris.cd-anak .cd-nm{font-weight:600}
 .cd-baris.cd-anak .cd-nilai{font-weight:600}
+.cd-baris .cd-nm small{display:block;color:var(--ink-3);font-weight:600;font-size:10.5px;font-family:var(--font-num)}
+.cd-baris .cd-nilai{text-align:right}
+.cd-baris .cd-nilai small{display:block;font-size:10.5px;font-weight:700;color:var(--ink-3)}
+.cd-baris .cd-nilai small.pos{color:var(--green-ink)}
+.cd-baris .cd-nilai small.neg{color:var(--red-ink)}

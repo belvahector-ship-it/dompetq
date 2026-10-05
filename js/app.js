@@ -2231,54 +2231,49 @@ function dialogCandle(c, mode) {
   const sp = Calc.saldoPadaCandle(db, c);
   const kls = n => n > 0 ? 'pos' : n < 0 ? 'neg' : '';
 
-  const kotak = (judul, nilai, kelas) => el('div', kelas ? { class:kelas } : null, [
-    el('small', null, judul), el('b', { class:kls(nilai) }, rp(nilai))]);
+  const kotak = (judul, nilai) => el('div', null, [
+    el('small', null, judul), el('b', null, rp(nilai))]);
 
   const body = el('div', { class:'cd-detail' });
   body.appendChild(el('div', { class:'cd-ring' }, [
     kotak('Saldo awal 00.00', c.open),
     kotak(c.terakhir ? 'Saldo sekarang' : 'Saldo akhir', c.close),
     el('div', { class:'cd-net-box' }, [
-      el('small', null, 'Untung / rugi bersih'),
-      el('b', { class:kls(c.net) }, tandaRp(c.net)),
-      el('small', { style:'text-transform:none;letter-spacing:0;font-weight:600' },
-        [`Pemasukan ${rp(c.masuk)} · Pengeluaran ${rp(c.keluar)}`,
-         c.piutang ? el('br') : null,
-         c.piutang ? `Piutang (pinjam/bayar) ${tandaRp(c.piutang)}` : null,
-         c.awalan ? el('br') : null,
-         c.awalan ? `Saldo awal dicatat ${tandaRp(c.awalan)}` : null])
+      el('small', null, 'Untung / rugi bersih (akhir − awal)'),
+      el('b', { class:kls(c.net) }, tandaRp(c.net))
     ])
   ]));
 
-  const m = sp.matriks;
-  const akun = db.akun.filter(a => a.aktif || (sp.saldoAkun[a.id] || 0) !== 0);
+  /* satu baris: nama, saldo akhir, dan selisihnya dari saldo awal */
+  const baris = (nama, awal, akhir, anak, tag) => el('div', { class:'cd-baris' + (anak ? ' cd-anak' : '') }, [
+    el('span', { class:'cd-nm' }, [nama, el('small', null, 'awal ' + rp(awal))]),
+    tag || null,
+    el('span', { class:'cd-nilai' }, [
+      rp(akhir),
+      el('small', { class:kls(akhir - awal) }, akhir === awal ? 'tetap' : tandaRp(akhir - awal))
+    ])
+  ]);
+
+  const mA = sp.awal.matriks, mB = sp.akhir.matriks;
+  const akun = db.akun.filter(a => a.aktif ||
+    (sp.awal.saldoAkun[a.id] || 0) !== 0 || (sp.akhir.saldoAkun[a.id] || 0) !== 0);
   body.appendChild(el('h4', null, 'Saldo tiap rekening'));
   if (!akun.length) body.appendChild(el('p', { class:'muted' }, 'Belum ada rekening.'));
   akun.forEach(a => {
-    const v = sp.saldoAkun[a.id] || 0;
-    body.appendChild(el('div', { class:'cd-baris' }, [
-      el('span', { class:'cd-nm' }, a.nama),
-      el('span', { class:'cd-nilai ' + kls(v) }, rp(v))
-    ]));
+    body.appendChild(baris(a.nama, sp.awal.saldoAkun[a.id] || 0, sp.akhir.saldoAkun[a.id] || 0));
     db.kantong.forEach(k => {
-      const sel = (m[a.id] || {})[k.id] || 0;
-      if (!sel) return;
-      body.appendChild(el('div', { class:'cd-baris cd-anak' }, [
-        el('span', { class:'cd-nm' }, '↳ ' + k.nama + ' (' + labelJenis(k) + ')'),
-        el('span', { class:'cd-nilai ' + kls(sel) }, rp(sel))
-      ]));
+      const x = (mA[a.id] || {})[k.id] || 0, y = (mB[a.id] || {})[k.id] || 0;
+      if (!x && !y) return;
+      body.appendChild(baris('↳ ' + k.nama + ' (' + labelJenis(k) + ')', x, y, true));
     });
   });
 
-  const kantong = db.kantong.filter(k => !k.arsip || (sp.saldoKantong[k.id] || 0) !== 0);
+  const kantong = db.kantong.filter(k => !k.arsip ||
+    (sp.awal.saldoKantong[k.id] || 0) !== 0 || (sp.akhir.saldoKantong[k.id] || 0) !== 0);
   body.appendChild(el('h4', null, 'Saldo tiap sumber dana'));
   kantong.forEach(k => {
-    const v = sp.saldoKantong[k.id] || 0;
-    body.appendChild(el('div', { class:'cd-baris' }, [
-      el('span', { class:'cd-nm' }, k.nama),
-      el('span', { class:'tag ' + (k.jenis === 'titipan' ? 'titipan' : 'milik') }, labelJenis(k)),
-      el('span', { class:'cd-nilai ' + kls(v) }, rp(v))
-    ]));
+    body.appendChild(baris(k.nama, sp.awal.saldoKantong[k.id] || 0, sp.akhir.saldoKantong[k.id] || 0, false,
+      el('span', { class:'tag ' + (k.jenis === 'titipan' ? 'titipan' : 'milik') }, labelJenis(k))));
   });
 
   Modal.buka({

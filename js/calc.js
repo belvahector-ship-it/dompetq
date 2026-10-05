@@ -452,17 +452,34 @@ const Calc = {
         if (saldo > hi) hi = saldo;
         if (saldo < lo) lo = saldo;
       }
+      const sampai = terakhir ? null : new Date(akhir.getTime() - 1);
       hasil.push({ awal, akhir, terakhir, open, close: saldo, hi, lo,
-                   masuk, keluar, awalan, piutang, net: saldo - open,
-                   sampai: terakhir ? null : new Date(akhir.getTime() - 1) });
+                  masuk, keluar, awalan, piutang, net: saldo - open,
+                  sebelum: new Date(awal.getTime() - 1), sampai });
+    }
+
+    /* Cross-check: open & close diambil dari saldo semua rekening/sumber
+       dana (matriks) pada batas periode, lalu net = close − open. Itu angka
+       yang sama dengan beranda, jadi tidak bisa menyimpang dari saldo asli. */
+    const total = m => db.kantong.reduce((s, k) => s +
+      Object.keys(m).reduce((a, ak) => a + ((m[ak] || {})[k.id] || 0), 0), 0);
+    let mAwal = this.matriks(db, hasil[0].sebelum);
+    for (const c of hasil) {
+      const mAkhir = this.matriks(db, c.sampai);
+      c.mAwal = mAwal; c.mAkhir = mAkhir;
+      c.open = total(mAwal); c.close = total(mAkhir);
+      c.net = c.close - c.open;
+      c.hi = Math.max(c.hi, c.open, c.close);
+      c.lo = Math.min(c.lo, c.open, c.close);
+      mAwal = mAkhir;
     }
     return hasil;
   },
 
   /* Saldo tiap rekening × sumber dana pada akhir satu candle. */
   saldoPadaCandle(db, c) {
-    const m = this.matriks(db, c.sampai);
-    return { matriks: m, saldoAkun: this.saldoAkun(db, m), saldoKantong: this.saldoKantong(db, m) };
+    const ambil = m => ({ matriks: m, saldoAkun: this.saldoAkun(db, m), saldoKantong: this.saldoKantong(db, m) });
+    return { awal: ambil(c.mAwal), akhir: ambil(c.mAkhir) };
   },
 
   /* Mutasi satu sumber dana — bahan laporan pertanggungjawaban.
